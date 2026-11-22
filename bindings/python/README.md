@@ -11,6 +11,9 @@ python -m pip install pq-cp-abe
 
 ## Object API
 
+For a complete runnable workflow, follow [Encrypt files with CP-ABE in Python](https://wanthinnn.github.io/pq-cp-abe/bindings/python/encrypt-files/).
+The [AC17, TKN20 and CoverCrypt comparison](https://wanthinnn.github.io/pq-cp-abe/architecture/scheme-comparison/) explains backend and post-quantum mode selection.
+
 `PqCpAbe` defaults to CoverCrypt. Pass `scheme` to select another backend.
 This example encrypts a message for finance users and verifies an ML-DSA
 signature on decryption.

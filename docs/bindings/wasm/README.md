@@ -16,6 +16,8 @@ optional ML-DSA signing.
 
 ## Documentation
 
+- [Attribute-based file encryption](encrypt-files.md): a complete Node.js example and browser file-handling notes.
+- [Compare AC17, TKN20 and CoverCrypt](../../architecture/scheme-comparison.md): select the backend and KEM mode.
 - [Build from source](build.md) — Emscripten, Rust and Go toolchains, commands and deployment artifacts.
 - [API reference](api.md) — objects, functional methods, enums, primitives, return values, errors.
 - [CLI and build guide](cli.md) — host files, signed workflows, source builds and publishing.

@@ -514,6 +514,103 @@
   color: var(--md-primary-fg-color);
 }
 
+/* Use native form controls, the documentation palette and a single-column mobile layout. */
+.md-typeset .pq-contact-form {
+  display: grid;
+  gap: 1rem;
+  padding: clamp(1rem, 3vw, 1.5rem);
+  border: 1px solid var(--pq-card-border);
+  border-radius: var(--pq-card-radius);
+  background: var(--md-default-bg-color);
+}
+
+.pq-contact-form__row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.pq-contact-form__field {
+  display: grid;
+  min-width: 0;
+  gap: 0.4rem;
+}
+
+.pq-contact-form label {
+  font-weight: 600;
+}
+
+.md-typeset .pq-contact-form input,
+.md-typeset .pq-contact-form textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--pq-card-border);
+  border-radius: 0.45rem;
+  background: var(--md-code-bg-color);
+  color: var(--md-default-fg-color);
+  font: inherit;
+  line-height: 1.5;
+}
+
+.pq-contact-form textarea {
+  resize: vertical;
+  min-height: 8rem;
+}
+
+.pq-contact-form :is(input, textarea)::placeholder {
+  color: var(--md-default-fg-color--light);
+  opacity: 1;
+}
+
+.pq-contact-form :is(input, textarea, button):focus-visible {
+  outline: 2px solid var(--md-accent-fg-color);
+  outline-offset: 3px;
+}
+
+.md-typeset .pq-contact-form__hint,
+.md-typeset .pq-contact-form__status {
+  margin: 0;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.pq-contact-form__hint {
+  color: var(--md-default-fg-color--light);
+}
+
+.pq-contact-form__status:empty {
+  display: none;
+}
+
+.pq-contact-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.md-typeset .pq-contact-form__actions .md-button {
+  margin: 0;
+  cursor: pointer;
+}
+
+.pq-contact-form button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media screen and (max-width: 44.984375em) {
+  .pq-contact-form__row {
+    grid-template-columns: 1fr;
+  }
+
+  .pq-contact-form__actions .md-button {
+    width: 100%;
+    text-align: center;
+  }
+}
+
 @media screen and (min-width: 76.25em) {
   .pq-section-nav-icon {
     display: none;

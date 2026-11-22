@@ -36,3 +36,7 @@ this work.
 See [Releases](../project/releases.md) for the existing release and packaging
 workflow, or [GitHub Releases](https://github.com/WanThinnn/Hybrid-PQ-CP-ABE/releases)
 for published SDK assets.
+
+## Contact
+
+For questions, integrations or collaboration, [write a message](contact.md).

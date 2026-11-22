@@ -40,7 +40,7 @@ CoverCrypt provides post-quantum attribute-based encryption with ML-KEM-based ke
 
 In **ciphertext-policy ABE (CP-ABE)**, the sender sets the policy and a trusted authority issues keys carrying attributes. The policy protects a data key; **AES-GCM** encrypts the payload.
 
-[:lucide-arrow-right: Explore the access-control model](bindings/README.md)
+[:lucide-arrow-right: Understand post-quantum CP-ABE](architecture/post-quantum-cp-abe.md)
 
 </div>
 
@@ -50,7 +50,7 @@ In **ciphertext-policy ABE (CP-ABE)**, the sender sets the policy and a trusted 
 
 For **post-quantum CP-ABE**, choose **CoverCrypt**, the SDK's post-quantum ABE backend, with **ML-KEM-768** in hybridized or post-quantum mode. AC17 and TKN20 remain classical; ML-DSA adds signatures independently.
 
-[:lucide-arrow-right: Compare schemes and PQ modes](architecture/README.md)
+[:lucide-arrow-right: Compare schemes and PQ modes](architecture/scheme-comparison.md)
 
 </div>
 
@@ -109,6 +109,36 @@ For **post-quantum CP-ABE**, choose **CoverCrypt**, the SDK's post-quantum ABE b
     Understand AC17, TKN20, CoverCrypt, access policies, hybrid encryption, and PQC modes.
 
     [:lucide-arrow-right: Architecture](architecture/README.md)
+
+</div>
+
+## Build a policy-based workflow
+
+<div class="grid cards" markdown>
+
+-   :lucide-file-lock-2: **Encrypt files in Python**
+
+    ---
+
+    Create an authority, encrypt a report for finance admins and check that a viewer is denied access.
+
+    [:lucide-arrow-right: Python file tutorial](bindings/python/encrypt-files.md)
+
+-   :lucide-file-code-2: **Encrypt files in JavaScript**
+
+    ---
+
+    Use the same access policy with the WASM SDK in Node.js and understand browser file handling.
+
+    [:lucide-arrow-right: JavaScript file tutorial](bindings/wasm/encrypt-files.md)
+
+-   :lucide-scale: **Choose an ABE backend**
+
+    ---
+
+    Compare AC17, TKN20 and CoverCrypt, then interpret the published benchmark for your workload.
+
+    [:lucide-arrow-right: Scheme comparison](architecture/scheme-comparison.md)
 
 </div>
 

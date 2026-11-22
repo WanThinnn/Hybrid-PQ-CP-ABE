@@ -69,57 +69,108 @@ int main(void)
 }
 ```
 
-### Compile and run on Linux
+### Compile and run on Windows
 
-`SDK` is a shell variable holding the **full path to the SDK folder you extracted**.
-Choose the folder that contains both `include/` and `lib/`. For example, after
-extracting the Linux archive into your Downloads folder, the layout is:
+Use the **Windows x86-64 SDK** with the **MSVC x64 build tools** and a Windows
+SDK. Open **x64 Native Tools Command Prompt for Visual Studio** from the Start
+menu. The following commands use **cmd**, not PowerShell. If the compiler is not
+installed, follow the [Windows toolchain prerequisites](../native/build.md).
 
-```text
-/home/alex/Downloads/libhybrid-pq-cp-abe_linux_x86_64_vX.Y.Z/
-├── include/
-│   └── hybrid_pq_cp_abe/
-│       └── hybrid-pq-cp-abe.h
-└── lib/
-    └── libhybrid-pq-cp-abe.so
+Set `SDK` to the **full path of the extracted folder containing `include/` and
+`lib/`**. Replace the user, folder name and `vX.Y.Z` with your actual path:
+
+```cmd
+set "SDK=C:\Users\alex\Downloads\libhybrid-pq-cp-abe_windows_x86_64_vX.Y.Z"
 ```
 
-For this example, set the variable as follows. `$HOME` expands to your home
-directory, such as `/home/alex`. Adjust the folder name and version to match
-the archive you actually extracted:
+Create a fresh working folder and save the C example above as `demo.c` inside it:
 
-```sh
-SDK="$HOME/Downloads/libhybrid-pq-cp-abe_linux_x86_64_vX.Y.Z"
+```cmd
+mkdir "%USERPROFILE%\pq-cp-abe-demo"
+cd /d "%USERPROFILE%\pq-cp-abe-demo"
 ```
 
-Create a separate folder for the example, then save the C code above as
-`demo.c` inside it:
+In the **same x64 Native Tools cmd window**, compile against the DLL import
+library, copy both runtime DLLs beside the executable, then run the example:
+
+```cmd
+cl /nologo /W4 /TC /std:c11 /MD /DUSE_DLL /I"%SDK%\include" demo.c /Fe:demo.exe /link /LIBPATH:"%SDK%\lib" libhybrid-pq-cp-abe_dll.lib
+copy /Y "%SDK%\lib\libhybrid-pq-cp-abe.dll" .
+copy /Y "%SDK%\lib\libcpabe_tkn20.dll" .
+echo hello from the native SDK> message.txt
+demo.exe
+fc /b message.txt recovered.txt
+```
+
+`/DUSE_DLL` selects the header's DLL-import declarations; `/MD` matches the
+SDK's MSVC runtime. Link **`libhybrid-pq-cp-abe_dll.lib`**, the DLL import library,
+rather than the separate static archive `libhybrid-pq-cp-abe.lib`.
+Keep **both** DLLs beside `demo.exe`, even for this AC17 example. Do not mix
+headers, import libraries or DLLs from different releases.
+
+If `demo.exe` succeeds and `fc /b` reports no differences (exit code 0), the
+recovered file matches the original byte for byte. A missing `cl` command means
+the MSVC toolchain is not installed or the terminal has not been initialized.
+A missing-DLL error means the runtime DLLs or the Microsoft Visual C++ x64
+runtime are unavailable. See the [native build guide](../native/build.md) for toolchain
+setup; using the prebuilt SDK does not require building its dependencies.
+
+### Compile and run on Linux / macOS
+
+Use GCC on Linux or Apple Clang from the Xcode Command Line Tools on macOS.
+`SDK` is a shell variable holding the **full path to the extracted SDK folder**,
+which contains both `include/` and `lib/`. Replace `vX.Y.Z` with your downloaded
+version. Keep these commands in one terminal session.
+
+Create a fresh working folder, then save the C example above as `demo.c` there:
 
 ```sh
 mkdir -p "$HOME/pq-cp-abe-demo"
 cd "$HOME/pq-cp-abe-demo"
 ```
 
-Run the following commands **from that folder, in the same terminal** where you
-set `SDK`. The compiler uses `$SDK/include` for headers and `$SDK/lib` for the
-native library; `demo.c` is read from your current working directory.
+#### Linux
+
+Select the extracted Linux x86-64 package and compile against its `.so`:
 
 ```sh
+SDK="$HOME/Downloads/libhybrid-pq-cp-abe_linux_x86_64_vX.Y.Z"
 gcc -std=c11 -Wall -Wextra -I"$SDK/include" demo.c -L"$SDK/lib" -lhybrid-pq-cp-abe -o demo
 printf '%s\n' 'hello from the native SDK' > message.txt
 LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ./demo
 cmp message.txt recovered.txt
 ```
 
-The example creates its keys, `message.txt`, `message.enc` and `recovered.txt`
-in the working folder. `LD_LIBRARY_PATH` lets the program find the SDK's shared
-library at runtime. If `cmp` prints nothing and exits successfully, the recovered
-file matches the original byte for byte.
+`LD_LIBRARY_PATH` makes the SDK's `libhybrid-pq-cp-abe.so` available to the loader
+for this run without changing your shell configuration.
 
-If you built from repository source with `make shared`, set `SDK` to the full
-path of that checkout instead, for example `SDK="$HOME/projects/Hybrid-PQ-CP-ABE"`.
-The checkout must contain the built shared library under `lib/`.
+#### macOS
 
-On Windows with MSVC, link `libhybrid-pq-cp-abe_dll.lib` and place
-`libhybrid-pq-cp-abe.dll` and `libcpabe_tkn20.dll` beside the executable.
-Use SDK headers and libraries from the same release.
+Choose the package matching your machine: **arm64** for Apple Silicon or
+**x86_64** for Intel. The prebuilt SDK requires macOS 12 or newer. If the compiler
+is missing, install the Xcode Command Line Tools with `xcode-select --install`.
+
+```sh
+SDK="$HOME/Downloads/libhybrid-pq-cp-abe_macos_arm64_vX.Y.Z"
+# On Intel, use the extracted macos_x86_64 folder instead.
+clang -std=c11 -Wall -Wextra -I"$SDK/include" demo.c -L"$SDK/lib" -lhybrid-pq-cp-abe -Wl,-rpath,"$SDK/lib" -o demo
+printf '%s\n' 'hello from the native SDK' > message.txt
+./demo
+cmp message.txt recovered.txt
+```
+
+The macOS SDK provides `libhybrid-pq-cp-abe.dylib`. The linker embeds `$SDK/lib`
+as a runtime search path to resolve the library's `@rpath` install name. If you
+move the SDK directory, rebuild the example with its new path. Use a compiler
+target matching the downloaded archive, including when running under Rosetta.
+
+#### Check the result
+
+Both Unix examples create the keys, `message.txt`, `message.enc` and
+`recovered.txt` in the working folder. If `cmp` prints nothing and exits
+successfully, the recovered file matches the original byte for byte.
+
+If you built from repository source with `make shared`, set `SDK` to that
+checkout instead, for example `SDK="$HOME/projects/Hybrid-PQ-CP-ABE"`. It must
+contain the platform's built shared library under `lib/`. Only `message.enc`
+is encrypted; the input and recovered text files contain plaintext.

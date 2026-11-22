@@ -10,6 +10,10 @@ This is a curated reference to the **implemented v6.1-style API**, not automatic
 
 ## Imports and layout
 
+For a complete workflow rather than individual signatures, follow the
+[Python file-encryption tutorial](encrypt-files.md). To understand backend and
+mode selection, use the [scheme comparison](../../architecture/scheme-comparison.md).
+
 ~~~python
 from pq_cp_abe import (
     PqCpAbe, BaseCPABE, AC17CPABE, TKN20CPABE, CoverCryptABE,

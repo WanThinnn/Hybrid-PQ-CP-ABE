@@ -10,6 +10,10 @@ This page describes the implemented public API in [`bindings/wasm/loader.d.mts`]
 
 ## Exports and factories
 
+Follow the [JavaScript file-encryption tutorial](encrypt-files.md) to use these
+methods together in Node.js. For backend and mode selection, see the
+[scheme comparison](../../architecture/scheme-comparison.md).
+
 ~~~js
 import {
   PqCpAbe, AC17CPABE, TKN20CPABE, CoverCryptABE,

@@ -4,6 +4,12 @@ icon: lucide/chart-bar
 
 # Benchmarks
 
+Before interpreting latency, read the
+[AC17, TKN20 and CoverCrypt comparison](scheme-comparison.md) for security modes
+and workload differences. For complete application examples, see
+[Python file encryption](../bindings/python/encrypt-files.md) and
+[JavaScript file encryption](../bindings/wasm/encrypt-files.md).
+
 ### Published Benchmark Snapshot
 
 A reproducible v6.0.0 benchmark snapshot is published under

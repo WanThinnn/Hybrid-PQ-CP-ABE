@@ -37,6 +37,14 @@ CoverCrypt through its common CP-ABE interface; the configured `hybridized` or
 
 ## Native interface and source layout
 
+For application-focused entry points, read
+[post-quantum CP-ABE explained](post-quantum-cp-abe.md) and
+[AC17 vs TKN20 vs CoverCrypt](scheme-comparison.md). Then follow the
+[Python](../bindings/python/encrypt-files.md) or
+[JavaScript file-encryption tutorial](../bindings/wasm/encrypt-files.md).
+Use the [published benchmarks](benchmarks.md) to inspect measured workloads
+alongside these architectural details.
+
 For a complete WebAssembly build on Linux (AC17, TKN20, CoverCrypt, AES-GCM and
 ML-DSA-87), run `make wasm -j8` and `make wasm-test -j8` after installing the
 toolchains in [bindings/wasm/README.md](../../bindings/wasm/README.md). The standalone

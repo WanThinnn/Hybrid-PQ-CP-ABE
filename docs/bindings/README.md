@@ -20,6 +20,12 @@ long as they have a trusted process for issuing and managing attribute keys.
 
 ## How CP-ABE works
 
+For a focused explanation of the security layers, read
+[what post-quantum CP-ABE means](../architecture/post-quantum-cp-abe.md).
+To implement a complete policy-protected report workflow, follow the
+[Python file tutorial](python/encrypt-files.md) or
+[JavaScript file tutorial](wasm/encrypt-files.md).
+
 ```mermaid
 flowchart LR
     OWNER["👤 Data owner"]
@@ -126,6 +132,10 @@ integration. This lets applications use policy-based encryption through the
 interface and runtime that best fit their environment.
 
 ## Language bindings
+
+Use the [AC17, TKN20 and CoverCrypt comparison](../architecture/scheme-comparison.md)
+to choose a backend before integrating an SDK. It also explains how to read
+the [published benchmarks](../architecture/benchmarks.md).
 
 The repository provides two primary developer SDKs. The native library and command-line tool have their own [build guide](../native/build.md) and [CLI reference](../native/cli.md).
 

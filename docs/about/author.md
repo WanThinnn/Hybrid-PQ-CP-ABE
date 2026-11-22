@@ -25,6 +25,7 @@ and decision support across the monitoring and response pipeline.
 
 ## Find out more
 
+- [Contact me](contact.md)
 - [GitHub profile](https://github.com/WanThinnn)
 - [Personal portfolio](https://wanthinnn.github.io/)
 - [Cyberfortress Labs](https://cyberfortress-labs.github.io/)

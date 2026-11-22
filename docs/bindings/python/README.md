@@ -15,6 +15,8 @@ mode; AC17 and TKN20 remain classical schemes.
 
 ## Contents
 
+- [Encrypt files with CP-ABE](encrypt-files.md): a complete report workflow with successful and denied access.
+- [Compare AC17, TKN20 and CoverCrypt](../../architecture/scheme-comparison.md): select the backend and KEM mode.
 - [Build from source](build.md) — native runtime, editable installation and platform wheels.
 - [API reference](api.md) — object/functional methods, parameters, return types, exceptions and standalone cryptographic primitives.
 - [Python CLI and file operations](cli.md) — named flags, signed workflows, CoverCrypt configuration and file naming.

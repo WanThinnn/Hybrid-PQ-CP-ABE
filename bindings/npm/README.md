@@ -10,6 +10,9 @@ npm install @wanthinnn/pq-cp-abe
 
 ## Quick start
 
+For a complete runnable workflow, follow [Attribute-based file encryption in JavaScript](https://wanthinnn.github.io/pq-cp-abe/bindings/wasm/encrypt-files/).
+The [AC17, TKN20 and CoverCrypt comparison](https://wanthinnn.github.io/pq-cp-abe/architecture/scheme-comparison/) explains backend and post-quantum mode selection.
+
 Initialize the WASM runtime asynchronously; encryption and decryption methods run synchronously after initialization.
 
 ~~~js
