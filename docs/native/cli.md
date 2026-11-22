@@ -4,6 +4,36 @@ icon: lucide/terminal
 
 # Command-line usage
 
+## Run a prebuilt CLI on Windows
+
+An extracted Windows SDK already contains the compiled CLI in `bin/`. Running
+it does **not** require MSVC, `cl.exe` or a Native Tools terminal. From the
+extracted SDK root, choose your ordinary shell:
+
+**CMD**
+
+```cmd
+bin\pq-cp-abe.exe --help
+```
+
+**PowerShell**
+
+```powershell
+.\bin\pq-cp-abe.exe --help
+```
+
+**Git Bash**
+
+```sh
+./bin/pq-cp-abe.exe --help
+```
+
+Keep the bundled runtime DLLs in `bin/` beside the CLI and ensure the Microsoft
+Visual C++ x64 runtime is available. Add `bin/` to `PATH` if you want to invoke
+`pq-cp-abe` outside that directory. The developer-shell requirement in the
+[source-build guide](build.md) applies to building and linking software, not to
+running these commands.
+
 ## Command reference
 
 Use `./bin/pq-cp-abe` from an extracted Unix release or `.\bin\pq-cp-abe.exe`
@@ -24,7 +54,9 @@ build toolchain.
   `make install UPDATE_PATH=0` to stage files without changing User PATH. Open
   a new terminal after updating User PATH.
 
-On Windows, use the installed SDK paths when compiling with MSVC:
+On Windows, **compiling your own application** with MSVC requires an initialized
+x64 developer shell (for example, x64 Native Tools CMD). This is a separate
+step from running the prebuilt CLI. Use the installed SDK paths when linking:
 
 ```bat
 cl /I"%LOCALAPPDATA%\Programs\pq-cp-abe\include" /c app.cpp

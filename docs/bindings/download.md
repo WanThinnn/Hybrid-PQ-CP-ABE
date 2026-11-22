@@ -71,49 +71,67 @@ int main(void)
 
 ### Compile and run on Windows
 
-Use the **Windows x86-64 SDK** with the **MSVC x64 build tools** and a Windows
-SDK. Open **x64 Native Tools Command Prompt for Visual Studio** from the Start
-menu. The following commands use **cmd**, not PowerShell. If the compiler is not
-installed, follow the [Windows toolchain prerequisites](../native/build.md).
+Use a normal **PowerShell** window. The SDK is already built; you do not need
+to rebuild the library or install its source-build dependencies.
 
-Set `SDK` to the **full path of the extracted folder containing `include/` and
-`lib/`**. Replace the user, folder name and `vX.Y.Z` with your actual path:
+#### 1. Select your extracted SDK
 
-```cmd
-set "SDK=C:\Users\alex\Downloads\libhybrid-pq-cp-abe_windows_x86_64_vX.Y.Z"
+Set `$SDK` to the folder containing `bin`, `include` and `lib`. Change the path
+and version below to match your download:
+
+```powershell
+$SDK = "$env:USERPROFILE\Downloads\libhybrid-pq-cp-abe_win_x86_64_vX.Y.Z\libhybrid-pq-cp-abe_win_x86_64_vX.Y.Z"
+& "$SDK\bin\pq-cp-abe.exe" --help
 ```
 
-Create a fresh working folder and save the C example above as `demo.c` inside it:
+If you see the command help, the SDK's ready-made CLI works. You can use it
+immediately by following the [CLI examples](../native/cli.md). No compiler is needed
+for this option.
 
-```cmd
-mkdir "%USERPROFILE%\pq-cp-abe-demo"
-cd /d "%USERPROFILE%\pq-cp-abe-demo"
+#### 2. Compile demo.c if you want to use the C API
+
+To turn your own C source into an executable, you need a C compiler. This
+example uses **Windows GCC**. Check that it is available in PowerShell:
+
+```powershell
+gcc --version
 ```
 
-In the **same x64 Native Tools cmd window**, compile against the DLL import
-library, copy both runtime DLLs beside the executable, then run the example:
+If `gcc` is not found, follow the [Windows C compiler setup](../native/build.md#windows-c-compiler-setup),
+then return here. If you only want to use the bundled CLI, skip this step.
 
-```cmd
-cl /nologo /W4 /TC /std:c11 /MD /DUSE_DLL /I"%SDK%\include" demo.c /Fe:demo.exe /link /LIBPATH:"%SDK%\lib" libhybrid-pq-cp-abe_dll.lib
-copy /Y "%SDK%\lib\libhybrid-pq-cp-abe.dll" .
-copy /Y "%SDK%\lib\libcpabe_tkn20.dll" .
-echo hello from the native SDK> message.txt
-demo.exe
-fc /b message.txt recovered.txt
+Create a fresh example folder and save the C code above as `demo.c` inside it:
+
+```powershell
+New-Item -ItemType Directory -Path "$env:USERPROFILE\Downloads\pq-cp-abe-demo"
+Set-Location "$env:USERPROFILE\Downloads\pq-cp-abe-demo"
 ```
 
-`/DUSE_DLL` selects the header's DLL-import declarations; `/MD` matches the
-SDK's MSVC runtime. Link **`libhybrid-pq-cp-abe_dll.lib`**, the DLL import library,
-rather than the separate static archive `libhybrid-pq-cp-abe.lib`.
-Keep **both** DLLs beside `demo.exe`, even for this AC17 example. Do not mix
-headers, import libraries or DLLs from different releases.
+Compile the example and copy the two runtime files next to it:
 
-If `demo.exe` succeeds and `fc /b` reports no differences (exit code 0), the
-recovered file matches the original byte for byte. A missing `cl` command means
-the MSVC toolchain is not installed or the terminal has not been initialized.
-A missing-DLL error means the runtime DLLs or the Microsoft Visual C++ x64
-runtime are unavailable. See the [native build guide](../native/build.md) for toolchain
-setup; using the prebuilt SDK does not require building its dependencies.
+```powershell
+gcc -std=c17 -DUSE_DLL "-I$SDK/include" demo.c "$SDK/lib/libhybrid-pq-cp-abe_dll.lib" -o demo.exe
+if ($LASTEXITCODE -ne 0) { throw "Compilation failed" }
+Copy-Item "$SDK\lib\libhybrid-pq-cp-abe.dll" .
+Copy-Item "$SDK\lib\libcpabe_tkn20.dll" .
+```
+
+#### 3. Run the example
+
+In the same example folder, create an input file, run the program and compare
+the recovered file:
+
+```powershell
+Set-Content -Path message.txt -Value "hello from the native SDK" -Encoding ascii
+.\demo.exe
+if ($LASTEXITCODE -ne 0) { throw "The demo failed" }
+fc.exe /b message.txt recovered.txt
+```
+
+If the comparison reports no differences, encryption and decryption succeeded.
+Keep the two DLLs beside `demo.exe`. Once built, the program also runs from
+ordinary CMD (`demo.exe`) or Git Bash (`./demo.exe`).
+
 
 ### Compile and run on Linux / macOS
 
@@ -125,8 +143,8 @@ version. Keep these commands in one terminal session.
 Create a fresh working folder, then save the C example above as `demo.c` there:
 
 ```sh
-mkdir -p "$HOME/pq-cp-abe-demo"
-cd "$HOME/pq-cp-abe-demo"
+mkdir -p "$HOME/Downloads/pq-cp-abe-demo"
+cd "$HOME/Downloads/pq-cp-abe-demo"
 ```
 
 #### Linux
@@ -135,7 +153,7 @@ Select the extracted Linux x86-64 package and compile against its `.so`:
 
 ```sh
 SDK="$HOME/Downloads/libhybrid-pq-cp-abe_linux_x86_64_vX.Y.Z"
-gcc -std=c11 -Wall -Wextra -I"$SDK/include" demo.c -L"$SDK/lib" -lhybrid-pq-cp-abe -o demo
+gcc -std=c17 -Wall -Wextra -I"$SDK/include" demo.c -L"$SDK/lib" -lhybrid-pq-cp-abe -o demo
 printf '%s\n' 'hello from the native SDK' > message.txt
 LD_LIBRARY_PATH="$SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ./demo
 cmp message.txt recovered.txt
@@ -153,7 +171,7 @@ is missing, install the Xcode Command Line Tools with `xcode-select --install`.
 ```sh
 SDK="$HOME/Downloads/libhybrid-pq-cp-abe_macos_arm64_vX.Y.Z"
 # On Intel, use the extracted macos_x86_64 folder instead.
-clang -std=c11 -Wall -Wextra -I"$SDK/include" demo.c -L"$SDK/lib" -lhybrid-pq-cp-abe -Wl,-rpath,"$SDK/lib" -o demo
+clang -std=c17 -Wall -Wextra -I"$SDK/include" demo.c -L"$SDK/lib" -lhybrid-pq-cp-abe -Wl,-rpath,"$SDK/lib" -o demo
 printf '%s\n' 'hello from the native SDK' > message.txt
 ./demo
 cmp message.txt recovered.txt

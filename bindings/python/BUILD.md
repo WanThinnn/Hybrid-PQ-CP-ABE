@@ -105,6 +105,13 @@ building or installing the Python package.
 
 ## Install the local Python source
 
+After the native runtime is built, installing this editable Python wrapper and
+running it do not require the x64 Native Tools terminal. You can use ordinary
+CMD, PowerShell or Git Bash with the intended Python environment activated.
+Retain the native DLLs and the Microsoft Visual C++ x64 runtime on Windows.
+Return to a configured developer shell when rebuilding the native library or
+running `make test`, which can compile native test programs.
+
 ```sh
 python -m pip install -e ./bindings/python
 python -c "import pq_cp_abe as abe; print(abe.__version__, abe.get_version()); print(abe.__file__); print(abe.native._name)"

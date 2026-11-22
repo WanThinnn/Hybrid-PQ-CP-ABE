@@ -216,6 +216,85 @@ After `make`, the build prints the exact include, dependency-library, native-lib
 
 Normal core builds are incremental. Use `make clean` only to remove the project core/object output. Use `make clean-deps` to remove the complete dependency output for the current platform.
 
+### Run built Windows artifacts
+
+The configured x64 developer shell is required for the source-build commands
+above, including `make test`, which can compile test executables. It is not
+required to run the resulting CLI or an application linked against the SDK.
+
+After building, you can close the developer shell and use ordinary CMD,
+PowerShell or Git Bash. Keep the required runtime DLLs beside the executable
+and ensure the Microsoft Visual C++ x64 runtime is installed. Headers and `.lib`
+files are build/link inputs, not runtime files. For shell-specific examples, see
+[running the Windows file-encryption example](api.md#compile-and-run-on-windows)
+and [running the prebuilt CLI](cli.md#run-a-prebuilt-cli-on-windows).
+
+### Windows C compiler setup
+
+This section concerns **applications using the prebuilt SDK**, not rebuilding
+the SDK itself. A normal PowerShell, CMD, Git Bash or MSYS2 shell can compile a
+C application when a suitable compiler is available. The shell does not decide
+which compiler you must use.
+
+For the [PowerShell example](api.md#compile-and-run-on-windows), make Windows
+GCC available as `gcc`. If necessary, install a native Windows GCC toolchain
+following [MSYS2's installation instructions](https://www.msys2.org/). Use a
+64-bit Windows compiler, not a Linux/WSL compiler or the MSYS `/usr/bin/gcc`.
+
+If you already have the tested MINGW64 compiler in `C:\msys64\mingw64\bin`,
+add it to **this PowerShell session** and check its version:
+
+```powershell
+$env:Path = "C:\msys64\mingw64\bin;$env:Path"
+gcc --version
+```
+
+Adjust that directory if your compiler is installed elsewhere. MSYS2 also
+provides other [compiler environments](https://www.msys2.org/docs/environments/);
+the concrete compatibility checks below used MINGW64.
+
+#### Tested C application compatibility
+
+The downloaded **Windows v6.1.0 SDK** was tested with the documentation's
+`demo.c`, the packaged headers, `libhybrid-pq-cp-abe_dll.lib`, and its two runtime
+DLLs. Every successful check compiled the application, ran AC17 setup, key
+generation, encryption and decryption, and compared the recovered file byte for
+byte. The library itself was not rebuilt.
+
+| Shell | Compiler | Compile and file round trip |
+| --- | --- | --- |
+| Ordinary CMD | MSYS2 MinGW-w64 GCC 15.2.0 | Passed |
+| Windows PowerShell 5.1 | Same GCC | Passed |
+| PowerShell 7 | Same GCC | Passed |
+| Git Bash | Same GCC, compiler directory first in `PATH` | Passed |
+| MSYS2 MINGW64 Bash | Same GCC | Passed |
+| CMD with the MSVC developer environment initialized | MSVC x64 | Passed |
+
+GCC linked directly to the SDK's existing DLL import `.lib`; generating a
+different import library was not necessary for this C example. These checks
+cover the public **C API with shared-library linking**. They do not establish
+compatibility with the SDK's static C++ archive or every third-party compiler.
+
+For Git Bash, put the compiler directory first **inside the shell** before
+compiling, so Git's bundled tools do not take precedence:
+
+```sh
+export PATH="/c/msys64/mingw64/bin:$PATH"
+gcc --version
+```
+
+With the SDK path assigned to `SDK`, the corresponding C compilation command is:
+
+```sh
+gcc -std=c17 -DUSE_DLL -I"$SDK/include" demo.c "$SDK/lib/libhybrid-pq-cp-abe_dll.lib" -o demo.exe
+```
+
+Use a Bash SDK path such as `/c/Users/alex/Downloads/...`, and keep the two
+packaged DLLs beside the executable. In ordinary CMD the same GCC command works
+with `%SDK%` in place of `$SDK`. MSVC remains another option in a configured
+developer shell; the native library source build above continues to use MSVC
+on Windows.
+
 ### Choose the C++ standard
 
 The native Makefile defaults to `CXX_STANDARD ?= c++17`. Override it on the

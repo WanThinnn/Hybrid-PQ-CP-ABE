@@ -27,6 +27,11 @@ mode; AC17 and TKN20 remain classical schemes.
 
 Requires Python 3.10 or newer and a wheel compatible with the current OS/CPU.
 
+On Windows, installing a compatible prebuilt wheel and running Python can be
+done from ordinary CMD, PowerShell or Git Bash. MSVC and an x64 developer shell
+are only needed when building native code from source, not when loading an
+already-built native runtime. Use a Python architecture matching the wheel.
+
 ~~~sh
 python -m pip install pq-cp-abe
 python -c "import pq_cp_abe as abe; print(abe.__version__, abe.get_version())"
