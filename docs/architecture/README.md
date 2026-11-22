@@ -1,8 +1,25 @@
 ---
+title: Post-Quantum CP-ABE Architecture and Schemes
+description: Compare AC17, TKN20 and CoverCrypt in the hybrid CP-ABE architecture, including ML-KEM-768 post-quantum key encapsulation and optional ML-DSA signing.
 icon: lucide/network
 ---
 
 # Architecture and schemes
+
+This guide explains the **hybrid ciphertext-policy attribute-based encryption
+(CP-ABE)** pipeline and the scope of its **post-quantum** protection. It compares
+the classical AC17 and TKN20 backends with CoverCrypt's ML-KEM-based modes, and
+shows how attribute policies, data-key protection, AES-GCM and optional signatures
+fit together. For terminology and a policy example, start with the
+[CP-ABE and post-quantum ABE overview](../bindings/README.md).
+
+**CoverCrypt is a post-quantum attribute-based encryption scheme with access
+policies**, not merely an optional signature layer. [Cosmian's documentation](https://docs.cosmian.com/encrypt/covercrypt.html)
+describes the complete scheme as post-quantum public-key encryption with access
+policies. The authors' [security analysis](https://ir.cwi.nl/pub/36050/)
+places the policy-based KEM construction in the CP-ABE vein. This library exposes
+CoverCrypt through its common CP-ABE interface; the configured `hybridized` or
+`post_quantum` mode supplies post-quantum protection, while `classic` does not.
 
 !!! note
     This library provides two distinct PQC capabilities: optional **ML-DSA-87**

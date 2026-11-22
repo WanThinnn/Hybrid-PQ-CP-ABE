@@ -1,6 +1,6 @@
 ---
-title: Post-Quantum Access Control SDK
-description: Encrypt data under attribute policies with PQ-CP-ABE for Python, JavaScript/WASM and C/C++, including CoverCrypt ML-KEM and optional ML-DSA signatures.
+title: Post-Quantum CP-ABE SDK
+description: A CP-ABE SDK for Python, JavaScript/WASM and C/C++, with CoverCrypt post-quantum attribute-based encryption, classical AC17/TKN20 and optional ML-DSA signatures.
 icon: lucide/house
 ---
 
@@ -10,9 +10,9 @@ icon: lucide/house
 
 # PQ-CP-ABE Documentation
 
-Encrypt data under expressive attribute policies from **Python**, **JavaScript / WebAssembly**, native **C/C++**, the command line, or a **HashiCorp Vault** integration.
+**PQ-CP-ABE** is a **ciphertext-policy attribute-based encryption (CP-ABE)** library and access control SDK for **Python**, **JavaScript / WebAssembly**, native **C/C++**, the command line and **HashiCorp Vault**.
 
-CoverCrypt adds ML-KEM based post-quantum key encapsulation, while optional ML-DSA signatures provide message authenticity.
+CoverCrypt provides post-quantum attribute-based encryption with ML-KEM-based key encapsulation, while optional ML-DSA signatures provide message authenticity.
 
 <div class="pq-actions" markdown>
 
@@ -23,6 +23,40 @@ CoverCrypt adds ML-KEM based post-quantum key encapsulation, while optional ML-D
 </div>
 
 </div>
+
+<section class="pq-primer" markdown>
+
+<span class="pq-eyebrow">:lucide-layers-3: How it works</span>
+
+## Post-quantum attribute-based encryption
+
+**PQ-ABE** brings attribute-based access policies together with cryptography designed to withstand quantum attacks.
+
+<div class="pq-primer__grid" markdown>
+
+<div class="pq-primer__item" markdown>
+
+### :lucide-key-round: Access follows the ciphertext
+
+In **ciphertext-policy ABE (CP-ABE)**, the sender sets the policy and a trusted authority issues keys carrying attributes. The policy protects a data key; **AES-GCM** encrypts the payload.
+
+[:lucide-arrow-right: Explore the access-control model](bindings/README.md)
+
+</div>
+
+<div class="pq-primer__item" markdown>
+
+### :lucide-shield-check: Post-quantum with CoverCrypt
+
+For **post-quantum CP-ABE**, choose **CoverCrypt**, the SDK's post-quantum ABE backend, with **ML-KEM-768** in hybridized or post-quantum mode. AC17 and TKN20 remain classical; ML-DSA adds signatures independently.
+
+[:lucide-arrow-right: Compare schemes and PQ modes](architecture/README.md)
+
+</div>
+
+</div>
+
+</section>
 
 ## Choose your SDK
 

@@ -1,12 +1,17 @@
 ---
 title: Python SDK
-description: Install pq-cp-abe for Python and use typed CP-ABE objects, hybrid encryption, ML-DSA signatures and native file or buffer operations.
+description: Use ciphertext-policy attribute-based encryption in Python with AC17, TKN20 or CoverCrypt, including post-quantum modes, AES-GCM and ML-DSA signing.
 icon: lucide/file-code-2
 ---
 
 # Python SDK
 
 The `pq-cp-abe` Python package exposes the project's native C ABI using `ctypes`. It **does not run WebAssembly**. On supported operating systems, a compatible platform wheel includes the native runtime.
+
+Use this **Python CP-ABE library** to encrypt files or bytes under an attribute
+policy, issue user keys and recover data when the policy matches. For
+post-quantum key protection, select CoverCrypt's `HYBRIDIZED` or `POST_QUANTUM`
+mode; AC17 and TKN20 remain classical schemes.
 
 ## Contents
 

@@ -1,6 +1,6 @@
 ---
-title: SDKs and attribute-based access control
-description: Learn how PQ-CP-ABE protects data with attribute policies, then install or build the Python and JavaScript/WebAssembly SDKs.
+title: CP-ABE and Post-Quantum Attribute-Based Encryption
+description: Understand ciphertext-policy attribute-based encryption (CP-ABE), PQ-ABE and the classical or post-quantum modes available in the PQ-CP-ABE SDK. Then install or build the Python and JavaScript/WebAssembly SDKs.
 icon: lucide/boxes
 ---
 
@@ -66,10 +66,13 @@ the **user's private key carries attributes**. Decryption succeeds only when tho
 attributes satisfy the policy embedded in the ciphertext.
 
 **Post-quantum (PQ)** refers to cryptographic techniques designed to resist
-attacks by quantum computers. PQ-CP-ABE combines policy-based encryption with
-post-quantum cryptography, but the exact protection depends on the algorithms
-and mode in use. A system is not post-quantum merely because it uses attribute
-policies or adds post-quantum signatures.
+attacks by quantum computers. **Post-quantum attribute-based encryption
+(PQ-ABE)** applies that goal to attribute-based access control. In this SDK,
+CoverCrypt is the library's **post-quantum ABE backend** for policy-based
+encryption, with ML-KEM-based key encapsulation in hybridized and post-quantum
+modes. Its classic mode does not provide post-quantum protection. A system is
+not post-quantum merely because it uses attribute policies or adds post-quantum
+signatures.
 
 ## Who can benefit from this approach?
 

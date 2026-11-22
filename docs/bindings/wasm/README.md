@@ -1,12 +1,18 @@
 ---
-title: JavaScript / WebAssembly SDK
-description: Use PQ-CP-ABE from Node.js and browsers with the JavaScript/WebAssembly SDK, TypeScript declarations and policy-based hybrid encryption.
+title: JavaScript and WebAssembly SDK
+description: Run ciphertext-policy attribute-based encryption in Node.js and browsers using WebAssembly, with TypeScript APIs and CoverCrypt post-quantum modes.
 icon: lucide/cpu
 ---
 
 # JavaScript / WebAssembly SDK
 
 The `@wanthinnn/pq-cp-abe` npm package executes the project's cryptographic code through **WebAssembly**, not a native Node.js `.node` addon. It supports Node.js and modern browsers. C++/Rust/Crypto++/liboqs run in an Emscripten module, while CIRCL/TKN20 uses a separate Go `js/wasm` runtime.
+
+This **JavaScript CP-ABE SDK** supports attribute-policy encryption and
+decryption for browser and Node.js applications. CoverCrypt's hybridized and
+post-quantum modes provide the ML-KEM-based key-protection path; AC17 and TKN20
+are classical alternatives. The API includes TypeScript declarations and
+optional ML-DSA signing.
 
 ## Documentation
 
