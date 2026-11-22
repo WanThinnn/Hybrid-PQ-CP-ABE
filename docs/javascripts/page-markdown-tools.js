@@ -1,5 +1,7 @@
 let pqMarkdownPageMapPromise = null;
 const pqMarkdownTextCache = new Map();
+let pqPageToolsCleanup = null;
+let pqPageToolsRevision = 0;
 
 function pqDocsRootUrl() {
   const logo = document.querySelector(".md-header .md-logo");
@@ -79,7 +81,6 @@ function pqCreateMenuItem({ icon, label, title, tag = "button" }) {
   element.className = "pq-page-tools__item";
   element.title = title;
   element.setAttribute("aria-label", title);
-  element.setAttribute("role", "menuitem");
 
   if (tag === "button") element.type = "button";
 
@@ -91,10 +92,13 @@ function pqCreateMenuItem({ icon, label, title, tag = "button" }) {
 }
 
 async function installMarkdownPageTools() {
+  const revision = ++pqPageToolsRevision;
+  pqPageToolsCleanup?.();
+  document.querySelectorAll(".pq-page-tools").forEach((node) => node.remove());
   document.querySelectorAll("[data-pq-page-tools-menu]").forEach((node) => node.remove());
 
   const content = document.querySelector(".md-content__inner.md-typeset");
-  if (!content || content.querySelector(".pq-page-tools")) return;
+  if (!content) return;
 
   const rootUrl = pqDocsRootUrl();
   const route = pqCurrentPageRoute(rootUrl);
@@ -110,7 +114,9 @@ async function installMarkdownPageTools() {
   }
 
   const page = pageMap[route];
-  if (!page) return;
+  if (!page || revision !== pqPageToolsRevision || !content.isConnected) return;
+  const listeners = new AbortController();
+  const listenerOptions = { signal: listeners.signal };
 
   const rawUrl = new URL(page.raw, rootUrl);
 
@@ -122,13 +128,15 @@ async function installMarkdownPageTools() {
   trigger.className = "pq-page-tools__trigger";
   trigger.title = "Page actions";
   trigger.setAttribute("aria-label", "Open page actions");
-  trigger.setAttribute("aria-haspopup", "menu");
+  trigger.setAttribute("aria-controls", "pq-page-actions");
   trigger.setAttribute("aria-expanded", "false");
   trigger.innerHTML = pqToolIcon("menu");
 
   const menu = document.createElement("div");
   menu.className = "pq-page-tools__menu";
-  menu.setAttribute("role", "menu");
+  menu.id = "pq-page-actions";
+  menu.setAttribute("role", "group");
+  menu.setAttribute("aria-label", "Page actions");
   menu.setAttribute("data-pq-page-tools-menu", "");
   menu.hidden = true;
 
@@ -182,8 +190,13 @@ async function installMarkdownPageTools() {
   raw.rel = "noopener";
 
   menu.append(copy, download, raw);
-  tools.append(trigger);
-  document.body.append(menu);
+  // Adjacent native buttons/links give Tab a predictable order without a
+  // custom ARIA menu keyboard model. CSS keeps the panel fixed in the viewport.
+  tools.append(trigger, menu);
+  pqPageToolsCleanup = () => {
+    listeners.abort();
+    tools.remove();
+  };
 
   const positionMenu = () => {
     if (menu.hidden) return;
@@ -224,16 +237,16 @@ async function installMarkdownPageTools() {
     event.stopPropagation();
   });
 
-  document.addEventListener("click", () => setOpen(false));
-  window.addEventListener("resize", positionMenu);
-  window.addEventListener("scroll", positionMenu, { passive: true });
+  document.addEventListener("click", () => setOpen(false), listenerOptions);
+  window.addEventListener("resize", positionMenu, listenerOptions);
+  window.addEventListener("scroll", positionMenu, { passive: true, signal: listeners.signal });
 
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !menu.hidden) {
       setOpen(false);
       trigger.focus();
     }
-  });
+  }, listenerOptions);
 
   const contentShell = content.closest(".md-content");
   const breadcrumb = contentShell?.querySelector(":scope > .md-path");

@@ -35,7 +35,7 @@ Send a message to **Lai Quan Thien (WanThinnn / Elio)**.
     <button class="md-button md-button--primary" type="submit" disabled>Open email draft</button>
     <button class="md-button" type="button" data-pq-contact-copy disabled>Copy message</button>
   </div>
-  <p class="pq-contact-form__status" data-pq-contact-status role="status" aria-live="polite"></p>
+  <p id="pq-contact-status" class="pq-contact-form__status" data-pq-contact-status role="status" aria-live="polite"></p>
   <noscript><p>To contact me without JavaScript, email <a href="mailto:iam.elio2415@gmail.com">iam.elio2415@gmail.com</a> directly.</p></noscript>
 </form>
 

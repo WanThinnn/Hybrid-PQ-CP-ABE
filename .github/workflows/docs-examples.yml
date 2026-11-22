@@ -1,0 +1,55 @@
+name: Test documentation examples
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['docs/**', 'scripts/check-doc-examples.py', 'tests/test_doc_examples.py', '.github/workflows/docs-examples.yml']
+  pull_request:
+    paths: ['docs/**', 'scripts/check-doc-examples.py', 'tests/test_doc_examples.py', '.github/workflows/docs-examples.yml']
+  schedule:
+    - cron: '30 2 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  prebuilt-sdk:
+    name: C17 docs on ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-22.04, windows-2022, macos-15, macos-15-intel]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          lfs: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: msys2/setup-msys2@v2
+        if: runner.os == 'Windows'
+        id: msys2
+        with:
+          msystem: MINGW64
+          install: mingw-w64-x86_64-gcc
+      - name: Expose only the Windows C compiler
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          MSYS_ROOT: ${{ steps.msys2.outputs.msys2-location }}
+        run: '"$env:MSYS_ROOT\mingw64\bin" >> $env:GITHUB_PATH'
+      - name: Run Markdown example against verified stable SDK in a clean process
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python scripts/check-doc-examples.py --latest --clean-env
+      - name: Test extraction and archive validation
+        run: python -m unittest discover -s tests -p test_doc_examples.py -v
+      - name: Check Windows PowerShell 5.1 as well
+        if: runner.os == 'Windows'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python scripts/check-doc-examples.py --latest --clean-env --powershell powershell

@@ -628,8 +628,7 @@
   }
 
   .md-typeset .pq-hero p {
-    text-align: justify;
-    text-justify: inter-word;
+    text-align: start;
   }
 
   .pq-page-tools__menu {
@@ -653,4 +652,21 @@
     box-sizing: border-box;
     text-align: center;
   }
+}
+
+.pq-header-toggle {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.pq-header-toggle:focus-visible,
+.pq-page-tools__trigger:focus-visible,
+.pq-page-tools__item:focus-visible,
+.md-typeset pre > code:focus-visible,
+.md-typeset__scrollwrap:focus-visible {
+  outline: 2px solid var(--md-accent-fg-color);
+  outline-offset: 3px;
 }

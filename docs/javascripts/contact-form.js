@@ -6,6 +6,15 @@ function installContactForm() {
     const status = form.querySelector('[data-pq-contact-status]');
     const copy = form.querySelector('[data-pq-contact-copy]');
     const submit = form.querySelector('button[type="submit"]');
+    form.querySelectorAll('input, textarea').forEach((field) => {
+      field.setAttribute('aria-describedby', 'pq-contact-help pq-contact-status');
+    });
+    form.addEventListener('invalid', (event) => {
+      event.target.setAttribute('aria-invalid', 'true');
+      const firstInvalid = form.querySelector('input:invalid, textarea:invalid') || event.target;
+      const label = firstInvalid.labels?.[0]?.textContent || 'this field';
+      status.textContent = `Please check ${label.toLowerCase()}. ${firstInvalid.validationMessage}`;
+    }, true);
     const draft = () => {
       const value = (name) => form.elements.namedItem(name).value.trim();
       // Subjects stay on one line, including values pasted from other apps.
@@ -23,6 +32,7 @@ function installContactForm() {
     };
     form.addEventListener('input', (event) => {
       event.target.setCustomValidity?.('');
+      event.target.removeAttribute('aria-invalid');
       status.textContent = '';
     });
     form.addEventListener('submit', (event) => {

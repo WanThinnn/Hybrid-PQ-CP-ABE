@@ -147,6 +147,28 @@ jobs:
           python -m unittest discover -s tests -p test_version_header.py -v
           python scripts/package-release.py --platform ${{ matrix.platform }} --arch ${{ matrix.arch }}
 
+      - name: Test Markdown C17 example against the packaged SDK
+        shell: bash
+        env:
+          SDK_PLATFORM: ${{ matrix.platform }}
+          SDK_ARCH: ${{ matrix.arch }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import subprocess
+          import sys
+
+          label = 'win' if os.environ['SDK_PLATFORM'] == 'windows' else os.environ['SDK_PLATFORM']
+          archives = list(Path('build/release').glob(
+              f"libhybrid-pq-cp-abe_{label}_{os.environ['SDK_ARCH']}_v*.zip"
+          ))
+          if len(archives) != 1:
+              raise SystemExit(f'Expected one packaged SDK, found {archives}')
+          subprocess.run([sys.executable, 'scripts/check-doc-examples.py',
+                          '--archive', str(archives[0]), '--clean-env'], check=True)
+          PY
+
       - uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.platform }}-${{ matrix.arch }}
