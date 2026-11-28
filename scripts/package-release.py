@@ -97,7 +97,7 @@ def collect_notices(root, package, include_vault=False):
         if recorded:
             cargo.append("+" + recorded[1].strip())
     packages = {}
-    for manifest in ("vendor/librabe-ffi/Cargo.toml", "bindings/covercrypt/Cargo.toml"):
+    for manifest in ("vendor/librabe-ffi/Cargo.toml", "bindings/ffi/covercrypt/Cargo.toml"):
         metadata = json.loads(subprocess.check_output(cargo + [
             "metadata", "--format-version", "1", "--locked", "--manifest-path",
             str(root / manifest)], cwd=root, text=True, encoding="utf-8"))
@@ -116,7 +116,7 @@ def collect_notices(root, package, include_vault=False):
                 shutil.copy2(license, destination / license.name)
         inventory.append({"ecosystem": "rust", "name": dependency["name"],
                           "version": dependency["version"], "license": dependency.get("license")})
-    module_dirs = [root / "bindings/tkn20"]
+    module_dirs = [root / "bindings/ffi/tkn20"]
     if include_vault:
         module_dirs.append(root / "plugins/vault/vault-plugin-abe")
     modules = "\n".join(subprocess.check_output(["go", "list", "-m", "-json", "all"],
@@ -213,7 +213,7 @@ def stage_wasm_package(root, package):
     shutil.copytree(root / "include/hybrid_pq_cp_abe", headers)
     copy_project_files(root, package, ("LICENSE", "NOTICE", "VERSION"))
     shutil.copy2(require_file(root / "bindings/wasm/README.md"), package / "README.md")
-    goroot = subprocess.check_output(["go", "env", "GOROOT"], cwd=root / "bindings/tkn20",
+    goroot = subprocess.check_output(["go", "env", "GOROOT"], cwd=root / "bindings/ffi/tkn20",
                                      text=True, encoding="utf-8").strip()
     go_notices = package / "licenses/go-runtime"
     go_notices.mkdir(parents=True)

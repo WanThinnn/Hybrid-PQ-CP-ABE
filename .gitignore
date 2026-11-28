@@ -401,6 +401,10 @@ test_api
 /build/deps/windows/*
 !/build/deps/windows/include/
 !/build/deps/windows/include/**
+
+# Generated PDF/CMS FFI artifacts: source header lives under bindings/.
+/bindings/ffi/pdf-signature/target/
+/build/deps/*/include/pqc-underskrift/
 demo*
 docs/plan
 

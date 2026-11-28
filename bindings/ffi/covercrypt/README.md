@@ -67,7 +67,7 @@ handles the payload and optional ML-DSA-87 signing. No cryptographic primitives
 are reimplemented. Rust panics are caught at the C bridge; Rust-owned buffers
 are zeroized and freed with `cc_buffer_free`.
 
-`make deps -j8` builds/checks all five native dependencies and stages both static
+`make deps -j8` builds/checks all six native dependencies and stages both static
 and shared CoverCrypt libraries and the C header:
 
 | Platform | Shared library under `build/deps/<platform>/lib/covercrypt/` |

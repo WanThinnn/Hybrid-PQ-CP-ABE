@@ -2258,7 +2258,7 @@ bits. [V3 wire format and signature binding](../native/parameters.md#v3-wire-for
 The CoverCrypt description above corresponds to the current project implementation in:
 
 ```text
-bindings/covercrypt/src/lib.rs
+bindings/ffi/covercrypt/src/lib.rs
 ```
 
 Project-owned CoverCrypt C ABI:
@@ -2348,7 +2348,7 @@ features = ["curve25519", "mlkem-768"]
 in:
 
 ```text
-bindings/covercrypt/Cargo.toml
+bindings/ffi/covercrypt/Cargo.toml
 ```
 
 Therefore the CoverCrypt Post-Quantum path described in this document uses:

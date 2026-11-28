@@ -132,7 +132,7 @@ The file-based CoverCrypt key-generation function persists the updated MSK.
 The v5.2 buffer function remains stateless and does not retain the user registry
 used by CoverCrypt tracing; this library does not expose tracing operations.
 Serialize access to authority files when issuing keys from multiple processes.
-See `bindings/covercrypt/README.md` for the native bridge and its upstream license.
+See `bindings/ffi/covercrypt/README.md` for the native bridge and its upstream license.
 
 ### Extend a CoverCrypt authority
 

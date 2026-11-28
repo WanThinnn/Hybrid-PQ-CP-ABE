@@ -226,8 +226,8 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version-file: bindings/tkn20/go.mod
-          cache-dependency-path: bindings/tkn20/go.sum
+          go-version-file: bindings/ffi/tkn20/go.mod
+          cache-dependency-path: bindings/ffi/tkn20/go.sum
 
       - name: Set up macOS build tools
         shell: bash

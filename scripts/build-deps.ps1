@@ -52,8 +52,18 @@ New-Item -ItemType Directory -Force -Path $WorkDir, $IncludeDir, $LibDir | Out-N
 # Git Bash -> PowerShell may not transfer the Cargo binary path correctly.
 # Use the standard rustup bin directory when present (only for the PDF crate).
 if ($Dependency -eq "pqc-underskrift") {
+    # Some Git Bash launches omit .EXE from PATHEXT, breaking 'Get-Command cargo'.
+    if (($env:PATHEXT -split ';') -notcontains '.EXE') {
+        $env:PATHEXT = '.COM;.EXE;.BAT;.CMD;' + $env:PATHEXT
+    }
     $CargoHome = if ($env:CARGO_HOME) { $env:CARGO_HOME } elseif ($env:USERPROFILE) { Join-Path $env:USERPROFILE ".cargo" } else { $null }
+    if (-not $CargoHome) {
+        $CargoCommand = Get-Command cargo.exe -ErrorAction SilentlyContinue
+        if ($CargoCommand) { $CargoHome = Split-Path (Split-Path $CargoCommand.Source -Parent) -Parent }
+    }
     if ($CargoHome) {
+        # Fingerprint Python also needs a stable Cargo home when launched via make/Git Bash.
+        $env:CARGO_HOME = $CargoHome
         $CargoBin = Join-Path $CargoHome "bin"
         if (Test-Path (Join-Path $CargoBin "cargo.exe")) {
             $env:PATH = $CargoBin + ";" + $env:PATH
@@ -390,9 +400,9 @@ function Build-CoverCrypt([bool]$RunTests = $false) {
     if (-not $Toolchain) { $Toolchain = $Toolchains | Where-Object { $_ -match 'x86_64-pc-windows-msvc$' } | Select-Object -First 1 }
     if (-not $Toolchain) { throw "CoverCrypt requires an installed x64 MSVC Rust toolchain" }
     $Version = (& rustup run $Toolchain rustc -vV) -join "`n"
-    $Inputs = @(Get-ChildItem "vendor\cover_crypt\src", "bindings\covercrypt\src" -Recurse -File) + @(
+    $Inputs = @(Get-ChildItem "vendor\cover_crypt\src", "bindings\ffi\covercrypt\src" -Recurse -File) + @(
         Get-Item "vendor\cover_crypt\Cargo.toml", "vendor\cover_crypt\Cargo.lock", "vendor\cover_crypt\UPSTREAM.md",
-            "bindings\covercrypt\Cargo.toml", "bindings\covercrypt\Cargo.lock", "bindings\covercrypt\include\covercrypt_ffi.h", "scripts\normalize-msvc-library.ps1"
+            "bindings\ffi\covercrypt\Cargo.toml", "bindings\ffi\covercrypt\Cargo.lock", "bindings\ffi\covercrypt\include\covercrypt_ffi.h", "scripts\normalize-msvc-library.ps1"
     )
     $Digests = ($Inputs | Sort-Object FullName | ForEach-Object { Get-FileDigest $_.FullName }) -join '|'
     $Fingerprint = Get-NativeFingerprint "covercrypt" "covercrypt|$BuildVersion|$Target|$Version|$Digests|mlkem-768|curve25519"
@@ -420,17 +430,17 @@ function Build-CoverCrypt([bool]$RunTests = $false) {
     $env:CARGO_TARGET_DIR = $Work
     $Sccache = Get-Sccache
     if ($Sccache) { $env:RUSTC_WRAPPER = $Sccache }
-    & cargo "+$Toolchain" build --locked --release --jobs $InnerJobs --target $Target --manifest-path "bindings\covercrypt\Cargo.toml"
+    & cargo "+$Toolchain" build --locked --release --jobs $InnerJobs --target $Target --manifest-path "bindings\ffi\covercrypt\Cargo.toml"
     if ($LASTEXITCODE -ne 0) { throw "CoverCrypt native bridge build failed" }
     & (Join-Path $PSScriptRoot "normalize-msvc-library.ps1") -InputLib (Join-Path $Work "$Target\release\covercrypt_ffi.lib") -OutputLib $OutLib
     Copy-Item (Join-Path $Work "$Target\release\covercrypt_ffi.dll") $OutDll -Force
     Copy-Item (Join-Path $Work "$Target\release\covercrypt_ffi.dll.lib") $OutImportLib -Force
-    Copy-Item "bindings\covercrypt\include\covercrypt_ffi.h" $Header -Force
+    Copy-Item "bindings\ffi\covercrypt\include\covercrypt_ffi.h" $Header -Force
     Write-DependencyFingerprint "covercrypt" $Fingerprint @("rust_target=$Target", "rust_toolchain=$Toolchain", "features=curve25519,mlkem-768")
 }
 
 function Build-PqcUnderskrift {
-    # Standalone archive: not linked into C++ until the PDF C ABI is available.
+    # Build the C ABI bridge (static + DLL); do not link the core yet.
     $Target = "x86_64-pc-windows-msvc"
     $Toolchains = @(& rustup toolchain list) | ForEach-Object { ($_ -split '\s+')[0] }
     $Toolchain = $Toolchains | Where-Object { $_ -eq "stable-x86_64-pc-windows-msvc" } | Select-Object -First 1
@@ -439,49 +449,65 @@ function Build-PqcUnderskrift {
     }
     if (-not $Toolchain) { throw "pqc-underskrift requires an installed x64 MSVC Rust toolchain" }
     $Version = (& rustup run $Toolchain rustc -vV) -join "`n"
-    $Fingerprint = Get-NativeFingerprint "pqc-underskrift" "pqc-underskrift|$BuildVersion|$Target|$Version|$Toolchain|staticlib|external-composite|no-default-features|lto=false|panic=unwind"
+    $Fingerprint = Get-NativeFingerprint "pqc-underskrift" "pqc-underskrift|$BuildVersion|$Target|$Version|$Toolchain|ffi-static+dll|external-composite|panic=unwind"
     $Work = Join-Path $WorkDir "pqc-underskrift-target"
     $DepLibDir = Join-Path $LibDir "pqc-underskrift"
-    $OutLib = Join-Path $DepLibDir "underskrift.lib"
-    if (Test-DependencyCache "pqc-underskrift" $Fingerprint @($OutLib)) {
+    $IncludeDirPdf = Join-Path $IncludeDir "pqc-underskrift"
+    $OutLib = Join-Path $DepLibDir "libpdf_signature_ffi.lib"
+    $OutDll = Join-Path $DepLibDir "pdf_signature_ffi.dll"
+    $OutImportLib = Join-Path $DepLibDir "pdf_signature_ffi.dll.lib"
+    $Header = Join-Path $IncludeDirPdf "pdf_signature_ffi.h"
+    if (Test-DependencyCache "pqc-underskrift" $Fingerprint @($OutLib, $OutDll, $OutImportLib, $Header)) {
         Write-Host "==> pqc-underskrift: cached"
         return
     }
-    Write-Host "==> pqc-underskrift ($InnerJobs jobs, external-composite, MSVC static archive only)"
-    Remove-Item $Work, $DepLibDir -Recurse -Force -ErrorAction SilentlyContinue
-    New-Item -ItemType Directory -Force -Path $DepLibDir | Out-Null
+    Write-Host "==> pqc-underskrift ($InnerJobs jobs, PDF C ABI static + DLL)"
+    Remove-Item $Work, $DepLibDir, $IncludeDirPdf -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force -Path $DepLibDir, $IncludeDirPdf | Out-Null
 
     $OldTargetDir = $env:CARGO_TARGET_DIR
     $OldLto = $env:CARGO_PROFILE_RELEASE_LTO
     $OldPanic = $env:CARGO_PROFILE_RELEASE_PANIC
     $OldWrapper = $env:RUSTC_WRAPPER
+    $OldTemp = $env:TEMP
+    $OldTmp = $env:TMP
+    $BuildTemp = Join-Path $WorkDir "pqc-underskrift-temp"
+    New-Item -ItemType Directory -Force -Path $BuildTemp | Out-Null
     try {
+        $env:TEMP = $BuildTemp
+        $env:TMP = $BuildTemp
         $env:CARGO_TARGET_DIR = $Work
         $env:CARGO_PROFILE_RELEASE_LTO = 'false'
         $env:CARGO_PROFILE_RELEASE_PANIC = 'unwind'
         $Sccache = Get-Sccache
         if ($Sccache) { $env:RUSTC_WRAPPER = $Sccache }
-        & cargo "+$Toolchain" rustc --locked --release --jobs $InnerJobs --target $Target --manifest-path "vendor\pqc-underskrift\Cargo.toml" --lib --crate-type staticlib --no-default-features --features external-composite
-        if ($LASTEXITCODE -ne 0) { throw "pqc-underskrift static library build failed" }
+        & cargo "+$Toolchain" build --locked --release --jobs $InnerJobs --target $Target --manifest-path "bindings\ffi\pdf-signature\Cargo.toml"
+        if ($LASTEXITCODE -ne 0) { throw "pqc-underskrift PDF C ABI build failed" }
     } finally {
         $env:CARGO_TARGET_DIR = $OldTargetDir
         $env:CARGO_PROFILE_RELEASE_LTO = $OldLto
         $env:CARGO_PROFILE_RELEASE_PANIC = $OldPanic
         $env:RUSTC_WRAPPER = $OldWrapper
+        $env:TEMP = $OldTemp
+        $env:TMP = $OldTmp
     }
-    $Built = Join-Path $Work "$Target\release\underskrift.lib"
-    if (-not (Test-Path $Built)) { throw "pqc-underskrift MSVC archive missing: $Built" }
-    Copy-Item $Built $OutLib -Force
-    Write-DependencyFingerprint "pqc-underskrift" $Fingerprint @("rust_target=$Target", "features=external-composite", "link=deferred-until-ffi")
+    $Release = Join-Path $Work "$Target\release"
+    $Built = Join-Path $Release "pdf_signature_ffi.lib"
+    if (-not (Test-Path $Built)) { throw "pdf-signature FFI MSVC archive missing: $Built" }
+    & (Join-Path $PSScriptRoot "normalize-msvc-library.ps1") -InputLib $Built -OutputLib $OutLib
+    Copy-Item (Join-Path $Release "pdf_signature_ffi.dll") $OutDll -Force
+    Copy-Item (Join-Path $Release "pdf_signature_ffi.dll.lib") $OutImportLib -Force
+    Copy-Item "bindings\ffi\pdf-signature\include\pdf_signature_ffi.h" $Header -Force
+    Write-DependencyFingerprint "pqc-underskrift" $Fingerprint @("rust_target=$Target", "bridge=pdf-signature", "features=external-composite", "link=deferred-until-c++")
     Remove-Item $Work -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 function Build-Tkn20 {
     $Upstream = Get-FileDigest "vendor\circl\UPSTREAM.md"
-    $GoMod = Get-FileDigest "bindings\tkn20\go.mod"
-    $GoSum = Get-FileDigest "bindings\tkn20\go.sum"
-    $Bridge = Get-FileDigest "bindings\tkn20\cpabe_tkn20.go"
-    $DefHash = Get-FileDigest "bindings\tkn20\libcpabe_tkn20.def"
+    $GoMod = Get-FileDigest "bindings\ffi\tkn20\go.mod"
+    $GoSum = Get-FileDigest "bindings\ffi\tkn20\go.sum"
+    $Bridge = Get-FileDigest "bindings\ffi\tkn20\cpabe_tkn20.go"
+    $DefHash = Get-FileDigest "bindings\ffi\tkn20\libcpabe_tkn20.def"
     $GoVersion = (& go version)
     $GccPath = (Get-Command gcc).Source
     $GccMachine = (& gcc -dumpmachine).Trim()
@@ -508,7 +534,7 @@ function Build-Tkn20 {
     Remove-Item $Work, $DepLibDir, $DepIncludeDir -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force -Path $Work, $DepLibDir, $DepIncludeDir | Out-Null
 
-    Push-Location "bindings\tkn20"
+    Push-Location "bindings\ffi\tkn20"
     try {
         $env:CGO_ENABLED = "1"
         $env:CC = $GccPath
@@ -520,7 +546,7 @@ function Build-Tkn20 {
 
     Copy-Item (Join-Path $Work "libcpabe_tkn20.dll") $OutDll -Force
     Copy-Item (Join-Path $Work "libcpabe_tkn20.h") $TknHeader -Force
-    Copy-Item "bindings\tkn20\libcpabe_tkn20.def" (Join-Path $DepLibDir "libcpabe_tkn20.def") -Force
+    Copy-Item "bindings\ffi\tkn20\libcpabe_tkn20.def" (Join-Path $DepLibDir "libcpabe_tkn20.def") -Force
 
     & lib.exe /NOLOGO "/DEF:$DepLibDir\libcpabe_tkn20.def" "/OUT:$OutLib" /MACHINE:X64
     if ($LASTEXITCODE -ne 0) { throw "TKN20 MSVC import library generation failed" }

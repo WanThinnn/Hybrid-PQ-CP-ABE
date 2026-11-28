@@ -30,7 +30,7 @@ cd Hybrid-PQ-CP-ABE
 ```
 
 Required toolchains include CMake, Rust/Cargo, GNU Make, and a native C/C++
-compiler with C++17 support (the default native build standard). Use the Go version declared in [the TKN20 module](../../bindings/tkn20/go.mod)
+compiler with C++17 support (the default native build standard). Use the Go version declared in [the TKN20 module](../../bindings/ffi/tkn20/go.mod)
 and check [the Vault module](../../plugins/vault/vault-plugin-abe/go.mod) when
 building the plugin. Windows also requires the MSVC x64 build tools and
 MinGW-w64 `gcc` for Go CGO/TKN20.
@@ -403,9 +403,12 @@ DLL consumers include `cryptopp/dll.h` first and link `cryptopp.lib`.
 src/                    C++ core implementation only
 include/                Public C/C++ API
 bindings/python/        Python binding
-bindings/tkn20/         Project-owned Go/C bridge for CIRCL TKN20
+bindings/ffi/tkn20/           Project-owned Go/C bridge for CIRCL TKN20
 plugins/vault/          Optional HashiCorp Vault plugin
-bindings/covercrypt/    Native Rust/C bridge for CoverCrypt
+bindings/wasm/                WebAssembly SDK
+bindings/npm/                 npm package distribution
+bindings/ffi/covercrypt/      Native Rust/C bridge for CoverCrypt
+bindings/ffi/pdf-signature/   Native Rust/C bridge for PDF/CMS
 vendor/cryptopp/        Vendored Crypto++ source
 vendor/liboqs/          Vendored Open Quantum Safe source
 vendor/librabe-ffi/     Vendored AC17 Rust FFI source

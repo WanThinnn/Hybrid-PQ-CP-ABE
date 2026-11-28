@@ -22,9 +22,9 @@ SOURCES = {
     'cryptopp-dll': ['vendor/cryptopp'],
     'liboqs': ['vendor/liboqs'],
     'rabe': ['vendor/librabe-ffi'],
-    'covercrypt': ['vendor/cover_crypt', 'bindings/covercrypt'],
-    'tkn20': ['vendor/circl', 'bindings/tkn20'],
-    'pqc-underskrift': ['vendor/pqc-underskrift'],
+    'covercrypt': ['vendor/cover_crypt', 'bindings/ffi/covercrypt'],
+    'tkn20': ['vendor/circl', 'bindings/ffi/tkn20'],
+    'pqc-underskrift': ['vendor/pqc-underskrift', 'bindings/ffi/pdf-signature'],
 }
 EXCLUDED = {'.git', 'target', 'build', 'build-cmake', 'CMakeFiles',
             '__pycache__', '.cache', '.work', 'obj', 'out'}
@@ -159,8 +159,7 @@ def output_paths(base, name):
     if name == 'cryptopp-dll':
         return [lib / 'cryptopp.dll', lib / 'cryptopp.lib']
     if name == 'pqc-underskrift':
-        # Rust-only PDF crate: no C header exists until a C ABI bridge is added.
-        return [*tree(lib)]
+        return [*tree(lib), *tree(base / 'include' / dep)]
     if name == 'cryptopp' and (base / 'lib').parent.name == 'windows':
         return [lib / 'libcryptopp.lib', *tree(base / 'include' / dep)]
     return [*tree(lib), *tree(base / 'include' / dep)]
@@ -181,8 +180,13 @@ def snapshot(base, name):
                      ['lib/covercrypt/libcovercrypt_ffi.a', f'lib/covercrypt/libcovercrypt_ffi.{extension}', 'include/covercrypt/covercrypt_ffi.h'],
         'tkn20': ['lib/tkn20/libcpabe_tkn20.dll', 'lib/tkn20/libcpabe_tkn20.lib', 'include/tkn20/cpabe_tkn20.h'] if windows else
                  ['lib/tkn20/libcpabe_tkn20.a', f'lib/tkn20/libcpabe_tkn20.{extension}', 'include/tkn20/cpabe_tkn20.h'],
-        'pqc-underskrift': ['lib/pqc-underskrift/underskrift.lib'] if windows else
-                           ['lib/pqc-underskrift/libunderskrift.a'],
+        'pqc-underskrift': ['lib/pqc-underskrift/libpdf_signature_ffi.lib',
+                           'lib/pqc-underskrift/pdf_signature_ffi.dll',
+                           'lib/pqc-underskrift/pdf_signature_ffi.dll.lib',
+                           'include/pqc-underskrift/pdf_signature_ffi.h'] if windows else
+                           ['lib/pqc-underskrift/libpdf_signature_ffi.a',
+                            f'lib/pqc-underskrift/libpdf_signature_ffi.{extension}',
+                            'include/pqc-underskrift/pdf_signature_ffi.h'],
     }
     for name_required in required[name]:
         if not (base / name_required).is_file():

@@ -104,12 +104,12 @@ check_wasm() {
         echo "[OK] Node.js $version"
     else echo '[MISSING] Node.js >= 18'; missing=1; fi
 
-    go_min=$(awk '$1 == "go" { print $2; exit }' "$ROOT/bindings/tkn20/go.mod")
+    go_min=$(awk '$1 == "go" { print $2; exit }' "$ROOT/bindings/ffi/tkn20/go.mod")
     # Allow the module to select an already cached Go toolchain.
-    if version=$(cd "$ROOT/bindings/tkn20" && GOPROXY=off GONOPROXY=none go version 2>/dev/null) &&
+    if version=$(cd "$ROOT/bindings/ffi/tkn20" && GOPROXY=off GONOPROXY=none go version 2>/dev/null) &&
         version_at_least "$version" "$go_min"; then
         echo "[OK] $version"
-    else echo "[MISSING] Go >= $go_min for bindings/tkn20"; missing=1; fi
+    else echo "[MISSING] Go >= $go_min for bindings/ffi/tkn20"; missing=1; fi
 
     if rustup run "$rust_toolchain" rustc --version >/dev/null 2>&1 &&
         rustup run "$rust_toolchain" cargo --version >/dev/null 2>&1 &&

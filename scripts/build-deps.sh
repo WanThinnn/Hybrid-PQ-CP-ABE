@@ -308,7 +308,7 @@ build_rabe() (
 build_covercrypt() (
   linux_rust_hardening
   local digest fingerprint work outlib shared_name outshared
-  digest="$( { find vendor/cover_crypt/src bindings/covercrypt/src -type f; printf '%s\n' vendor/cover_crypt/Cargo.toml vendor/cover_crypt/Cargo.lock vendor/cover_crypt/UPSTREAM.md bindings/covercrypt/Cargo.toml bindings/covercrypt/Cargo.lock bindings/covercrypt/include/covercrypt_ffi.h; } | LC_ALL=C sort | while IFS= read -r input; do hash_file "$input"; done )"
+  digest="$( { find vendor/cover_crypt/src bindings/ffi/covercrypt/src -type f; printf '%s\n' vendor/cover_crypt/Cargo.toml vendor/cover_crypt/Cargo.lock vendor/cover_crypt/UPSTREAM.md bindings/ffi/covercrypt/Cargo.toml bindings/ffi/covercrypt/Cargo.lock bindings/ffi/covercrypt/include/covercrypt_ffi.h; } | LC_ALL=C sort | while IFS= read -r input; do hash_file "$input"; done )"
   fingerprint="$(native_fingerprint covercrypt "covercrypt|$BUILD_VERSION|$PLATFORM|$(rustc -vV)|$digest|curve25519|mlkem-768")"
   outlib="$LIB_DIR/covercrypt/libcovercrypt_ffi.a"
   if [[ "$PLATFORM" == macos ]]; then
@@ -326,33 +326,39 @@ build_covercrypt() (
   # Cargo's timestamp cache must not defeat our content-based invalidation.
   rm -rf "$work" "$LIB_DIR/covercrypt" "$INCLUDE_DIR/covercrypt"
   mkdir -p "$LIB_DIR/covercrypt" "$INCLUDE_DIR/covercrypt"
-  CARGO_TARGET_DIR="$work" cargo build --locked --release --jobs "$INNER_JOBS" --manifest-path bindings/covercrypt/Cargo.toml
+  CARGO_TARGET_DIR="$work" cargo build --locked --release --jobs "$INNER_JOBS" --manifest-path bindings/ffi/covercrypt/Cargo.toml
   cp "$work/release/libcovercrypt_ffi.a" "$outlib"
   cp "$work/release/$shared_name" "$outshared"
-  cp bindings/covercrypt/include/covercrypt_ffi.h "$INCLUDE_DIR/covercrypt/"
+  cp bindings/ffi/covercrypt/include/covercrypt_ffi.h "$INCLUDE_DIR/covercrypt/"
   write_fingerprint covercrypt "$fingerprint"
 )
 
 build_pqc_underskrift() (
-  # Keep the PDF engine separate until a public C ABI bridge is implemented.
+  # Stage the C ABI bridge without linking it into the C++ core yet.
   linux_rust_hardening
   local rust_version fingerprint work outlib
   rust_version="$(rustc -vV)"
-  fingerprint="$(native_fingerprint pqc-underskrift "pqc-underskrift|$BUILD_VERSION|$PLATFORM|$rust_version|release|staticlib|external-composite|no-default-features|lto=false|panic=unwind")"
-  outlib="$LIB_DIR/pqc-underskrift/libunderskrift.a"
-  if cache_matches pqc-underskrift "$fingerprint" "$outlib"; then
+  fingerprint="$(native_fingerprint pqc-underskrift "pqc-underskrift|$BUILD_VERSION|$PLATFORM|$rust_version|release|ffi-static+shared|external-composite|panic=unwind")"
+  outlib="$LIB_DIR/pqc-underskrift/libpdf_signature_ffi.a"
+  local shared_name=libpdf_signature_ffi.so
+  [[ "$PLATFORM" == "macos" ]] && shared_name=libpdf_signature_ffi.dylib
+  local shared="$LIB_DIR/pqc-underskrift/$shared_name"
+  local header="$INCLUDE_DIR/pqc-underskrift/pdf_signature_ffi.h"
+  if cache_matches pqc-underskrift "$fingerprint" "$outlib" "$shared" "$header"; then
     echo '==> pqc-underskrift: cached'
     return
   fi
-  echo "==> pqc-underskrift ($INNER_JOBS jobs, external-composite, standalone static archive)"
+  echo "==> pqc-underskrift ($INNER_JOBS jobs, external-composite, C ABI static + shared)"
   work="$WORK_DIR/pqc-underskrift-target"
-  rm -rf "$work" "$LIB_DIR/pqc-underskrift"
-  mkdir -p "$LIB_DIR/pqc-underskrift"
+  rm -rf "$work" "$LIB_DIR/pqc-underskrift" "$INCLUDE_DIR/pqc-underskrift"
+  mkdir -p "$LIB_DIR/pqc-underskrift" "$INCLUDE_DIR/pqc-underskrift"
   CARGO_TARGET_DIR="$work" CARGO_PROFILE_RELEASE_LTO=false CARGO_PROFILE_RELEASE_PANIC=unwind \
-    cargo rustc --locked --release --jobs "$INNER_JOBS" --manifest-path vendor/pqc-underskrift/Cargo.toml \
-      --lib --crate-type staticlib --no-default-features --features external-composite
-  test -f "$work/release/libunderskrift.a" || { echo 'pqc-underskrift archive not found' >&2; exit 1; }
-  cp "$work/release/libunderskrift.a" "$outlib"
+    cargo build --locked --release --jobs "$INNER_JOBS" --manifest-path bindings/ffi/pdf-signature/Cargo.toml
+  test -f "$work/release/libpdf_signature_ffi.a" || { echo 'PDF C ABI archive not found' >&2; exit 1; }
+  test -f "$work/release/$shared_name" || { echo 'PDF C ABI shared library not found' >&2; exit 1; }
+  cp "$work/release/libpdf_signature_ffi.a" "$outlib"
+  cp "$work/release/$shared_name" "$shared"
+  cp bindings/ffi/pdf-signature/include/pdf_signature_ffi.h "$header"
   write_fingerprint pqc-underskrift "$fingerprint"
   rm -rf "$work"
 )
@@ -364,9 +370,9 @@ test_covercrypt() {
 build_tkn20() (
   local upstream gomod gosum bridge gover cc ccver fingerprint work outlib
   upstream="$(hash_file vendor/circl/UPSTREAM.md)"
-  gomod="$(hash_file bindings/tkn20/go.mod)"
-  gosum="$(hash_file bindings/tkn20/go.sum)"
-  bridge="$(hash_file bindings/tkn20/cpabe_tkn20.go)"
+  gomod="$(hash_file bindings/ffi/tkn20/go.mod)"
+  gosum="$(hash_file bindings/ffi/tkn20/go.sum)"
+  bridge="$(hash_file bindings/ffi/tkn20/cpabe_tkn20.go)"
   gover="$(go version)"
   cc="${CC:-cc}"
   ccver="$($cc --version | head -n 1)"
@@ -393,7 +399,7 @@ build_tkn20() (
   mkdir -p "$work" "$INCLUDE_DIR/tkn20" "$LIB_DIR/tkn20"
 
   (
-    cd bindings/tkn20
+    cd bindings/ffi/tkn20
     CGO_ENABLED=1 CC="$cc" go build -p "$INNER_JOBS" -buildmode=c-archive -o "$work/libcpabe_tkn20.a" .
   )
   cp "$work/libcpabe_tkn20.a" "$outlib"
@@ -401,13 +407,13 @@ build_tkn20() (
 
   if [[ "$PLATFORM" == "macos" ]]; then
     (
-      cd bindings/tkn20
+      cd bindings/ffi/tkn20
       CGO_ENABLED=1 CC="$cc" go build -p "$INNER_JOBS" -buildmode=c-shared -o "$work/libcpabe_tkn20.dylib" .
     )
     cp "$work/libcpabe_tkn20.dylib" "$LIB_DIR/tkn20/"
   else
     (
-      cd bindings/tkn20
+      cd bindings/ffi/tkn20
       CGO_ENABLED=1 CC="$cc" go build -p "$INNER_JOBS" -buildmode=c-shared -o "$work/libcpabe_tkn20.so" .
     )
     cp "$work/libcpabe_tkn20.so" "$LIB_DIR/tkn20/"

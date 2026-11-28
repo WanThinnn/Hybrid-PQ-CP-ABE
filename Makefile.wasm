@@ -34,8 +34,8 @@ all: static shared
 	@echo 'Published archive and JS/WASM runtime: $(LIB_DIR)'
 deps:
 	@bash scripts/build-wasm-deps.sh $(JOBS)
-# Build and cache the standalone Rust PDF/CMS archive without linking it
-# into the WASM SDK. Enable linking only after the C ABI bridge is implemented.
+# Stage the PDF Composite C ABI static archive for Emscripten (opt-in).
+# No JS/WASM API exports or core linker changes until the integration phase.
 pdf-deps:
 	@bash scripts/build-wasm-deps.sh $(JOBS) pdf
 $(READY):

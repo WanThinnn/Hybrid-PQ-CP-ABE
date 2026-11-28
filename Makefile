@@ -315,7 +315,7 @@ clean-deps:
 	@echo "Done! Dependency cache cleared."
 endif
 
-# Build only the standalone PDF/CMS archive; no core/C ABI linkage yet.
+# Build the PDF Composite C ABI bridge as static + shared libraries; core integration follows.
 ifeq ($(PLATFORM),windows)
 pdf-deps: SHELL = sh.exe
 pdf-deps: .SHELLFLAGS = -c

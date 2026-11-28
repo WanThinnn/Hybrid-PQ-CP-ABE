@@ -23,9 +23,9 @@ class ConfigureTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="wasm configure ") as directory:
             path = Path(directory)
             (path / "configure").write_bytes((ROOT / "configure").read_bytes())
-            module = path / "bindings/tkn20"
+            module = path / "bindings/ffi/tkn20"
             module.mkdir(parents=True)
-            (module / "go.mod").write_bytes((ROOT / "bindings/tkn20/go.mod").read_bytes())
+            (module / "go.mod").write_bytes((ROOT / "bindings/ffi/tkn20/go.mod").read_bytes())
             commands = path / "bin"
             commands.mkdir()
             def posix(file):
@@ -86,10 +86,12 @@ esac
                        CONFIGURE_TEST_HOME=fixture, CONFIGURE_TEST_FILE=str(path / "configure"),
                        CONFIGURE_TEST_TRACE=fixture + "/installed", EMSDK="", MSYSTEM="MINGW64",
                        HCPABE_CONFIGURE_DISCOVER_PATHS="0")
+            # Configure's install helper reads uppercase PROGRAMFILES and
+            # USERPROFILE on Windows; supply deterministic values in the stub.
+            env.update(USERPROFILE=fixture, PROGRAMFILES=fixture)
             if os.name != "nt":
                 (commands / "cygpath").write_text('#!/bin/sh\nprintf "%s\\n" "$2"\n', newline="\n")
                 (commands / "cygpath").chmod(0o755)
-                env.update(USERPROFILE=fixture, PROGRAMFILES=fixture)
             result = self.run_configure("--wasm", env=env)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("[MISSING] emcc", result.stdout)
@@ -207,7 +209,7 @@ esac
             self.assertIn("requires Linux/WSL, macOS, or Windows MSYS2", result.stderr)
 
             env["CONFIGURE_TEST_OS"] = "Linux"
-            go_mod = (ROOT / "bindings/tkn20/go.mod").read_text(encoding="utf-8")
+            go_mod = (ROOT / "bindings/ffi/tkn20/go.mod").read_text(encoding="utf-8")
             wasm_go = next(line.split()[1] for line in go_mod.splitlines() if line.startswith("go "))
             env["CONFIGURE_TEST_GO"] = wasm_go
             result = self.run_configure("--wasm", env=env)

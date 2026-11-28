@@ -82,9 +82,10 @@ class NativeDependencyCacheTests(unittest.TestCase):
             self.invoke('ready', name='all')
         self.assertFalse(ready.exists())
 
-    def test_pqc_underskrift_uses_archive_only_and_detects_tampering(self):
-        # The Rust PDF crate has no public C headers until the FFI is added.
-        archive = self.write('build/deps/linux/lib/pqc-underskrift/libunderskrift.a')
+    def test_pqc_underskrift_ffi_static_shared_header_and_tampering(self):
+        archive = self.write('build/deps/linux/lib/pqc-underskrift/libpdf_signature_ffi.a')
+        self.write('build/deps/linux/lib/pqc-underskrift/libpdf_signature_ffi.so')
+        self.write('build/deps/linux/include/pqc-underskrift/pdf_signature_ffi.h')
         self.invoke('record', name='pqc-underskrift')
         self.invoke('check', name='pqc-underskrift')
         archive.write_bytes(b'modified archive')
@@ -102,7 +103,9 @@ class NativeDependencyCacheTests(unittest.TestCase):
                 self.write(f'build/deps/linux/lib/{name}/{library}.{extension}')
             self.write(f'build/deps/linux/include/{name}/{headers[name]}')
             self.invoke('record', name=name)
-        self.write('build/deps/linux/lib/pqc-underskrift/libunderskrift.a')
+        self.write('build/deps/linux/lib/pqc-underskrift/libpdf_signature_ffi.a')
+        self.write('build/deps/linux/lib/pqc-underskrift/libpdf_signature_ffi.so')
+        self.write('build/deps/linux/include/pqc-underskrift/pdf_signature_ffi.h')
         self.invoke('record', name='pqc-underskrift')
         self.invoke('ready', name='all')
         ready = self.base / 'lib/.ready'

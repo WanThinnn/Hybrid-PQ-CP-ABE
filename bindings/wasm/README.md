@@ -26,7 +26,7 @@ Configure runs as a child
 process, so its environment changes do not reach your current terminal. It
 writes activation scripts with the detected SDK path; you do not need to locate
 `emsdk_env.sh` or `emsdk_env.bat` manually. Go must satisfy
-`bindings/tkn20/go.mod`; Node.js 18+ is required (the SDK also provides Node).
+`bindings/ffi/tkn20/go.mod`; Node.js 18+ is required (the SDK also provides Node).
 
 ## **Linux, WSL, and macOS**
 

@@ -50,23 +50,28 @@ rustup component list --installed --toolchain "$rust_toolchain" | grep -q '^rust
 WORK="$DEPS/.work"
 mkdir -p "$WORK" "$DEPS/include" "$DEPS/lib"
 if [[ "$MODE" == pdf ]]; then
-  # Optional until a C ABI wrapper is available. Do not link into WASM SDK yet.
+  # Build the C ABI bridge separately; not yet linked/exported in the JS/WASM SDK.
+  # wasm-source-digest.py accepts directories only. Hash individual Cargo
+  # manifests/lockfiles and the C ABI header separately below.
   pdf_digest="$(python3 scripts/wasm-source-digest.py "$WORK/pqc-underskrift-digests.json" \
-    vendor/pqc-underskrift/src vendor/pqc-underskrift/Cargo.toml vendor/pqc-underskrift/Cargo.lock)"
+    vendor/pqc-underskrift/src bindings/ffi/pdf-signature/src)"
   pdf_fingerprint="$({
     printf '%s\n' "$pdf_digest"
+    "${hash[@]}" vendor/pqc-underskrift/Cargo.toml vendor/pqc-underskrift/Cargo.lock \
+      bindings/ffi/pdf-signature/Cargo.toml bindings/ffi/pdf-signature/Cargo.lock \
+      bindings/ffi/pdf-signature/include/pdf_signature_ffi.h
     emcc --version
     cargo +"$rust_toolchain" --version
     rustc +"$rust_toolchain" -vV
     "${hash[@]}" scripts/build-wasm-deps.sh
   } | "${hash[@]}" | cut -d' ' -f1)"
-  pdf_lib="$DEPS/lib/pqc-underskrift/libunderskrift.a"
+  pdf_lib="$DEPS/lib/pqc-underskrift/libpdf_signature_ffi.a"
   pdf_ready="$DEPS/lib/pqc-underskrift/.ready"
   if [[ -f "$pdf_lib" && -f "$pdf_ready" ]] && [[ "$(cat "$pdf_ready")" == "$pdf_fingerprint" ]]; then
-    echo 'WASM pqc-underskrift: cached'
+    echo 'WASM pdf-signature-ffi: cached'
     exit 0
   fi
-  echo '==> pqc-underskrift (WASM/Emscripten static archive, external-composite)'
+  echo '==> pdf-signature-ffi (WASM/Emscripten static C ABI archive, external-composite)'
   mkdir -p "$DEPS/lib/pqc-underskrift"
   target_dir="$WORK/pqc-underskrift-target"
   if (( windows )); then target_dir="$(cygpath -am "$target_dir")"; fi
@@ -74,10 +79,12 @@ if [[ "$MODE" == pdf ]]; then
   export RUSTFLAGS='-C panic=abort'
   CARGO_TARGET_DIR="$target_dir" cargo +"$rust_toolchain" rustc -Zbuild-std=std,panic_abort \
     --locked --release --jobs "$JOBS" --target wasm32-unknown-emscripten \
-    --manifest-path vendor/pqc-underskrift/Cargo.toml \
-    --lib --crate-type staticlib --no-default-features --features external-composite
-  test -f "$WORK/pqc-underskrift-target/wasm32-unknown-emscripten/release/libunderskrift.a"
-  cp "$WORK/pqc-underskrift-target/wasm32-unknown-emscripten/release/libunderskrift.a" "$pdf_lib"
+    --manifest-path bindings/ffi/pdf-signature/Cargo.toml \
+    --lib --crate-type staticlib --no-default-features
+  test -f "$WORK/pqc-underskrift-target/wasm32-unknown-emscripten/release/libpdf_signature_ffi.a"
+  cp "$WORK/pqc-underskrift-target/wasm32-unknown-emscripten/release/libpdf_signature_ffi.a" "$pdf_lib"
+  mkdir -p "$DEPS/include/pqc-underskrift"
+  cp bindings/ffi/pdf-signature/include/pdf_signature_ffi.h "$DEPS/include/pqc-underskrift/"
   printf '%s\n' "$pdf_fingerprint" > "$pdf_ready"
   echo "WASM pqc-underskrift staged: $pdf_lib (not linked into SDK)"
   exit 0
@@ -86,12 +93,12 @@ fi
 echo '==> Checking WASM dependency cache (toolchains and sources)'
 source_digest="$(python3 scripts/wasm-source-digest.py "$WORK/source-digests.json" \
   vendor/cryptopp vendor/liboqs vendor/circl vendor/librabe-ffi/src \
-  vendor/cover_crypt/src bindings/covercrypt/src bindings/tkn20)"
+  vendor/cover_crypt/src bindings/ffi/covercrypt/src bindings/ffi/tkn20)"
 digest="$({
   printf '%s\n' "$source_digest"
   emcc --version && cargo +"$rust_toolchain" --version && rustc +"$rust_toolchain" -vV &&
-    (cd bindings/tkn20 && go version) &&
-    "${hash[@]}" scripts/{build-wasm-deps.sh,wasm-source-digest.py} vendor/librabe-ffi/rabe.h bindings/covercrypt/include/covercrypt_ffi.h vendor/librabe-ffi/Cargo.{toml,lock} vendor/cover_crypt/Cargo.{toml,lock} bindings/covercrypt/Cargo.{toml,lock}
+    (cd bindings/ffi/tkn20 && go version) &&
+    "${hash[@]}" scripts/{build-wasm-deps.sh,wasm-source-digest.py} vendor/librabe-ffi/rabe.h bindings/ffi/covercrypt/include/covercrypt_ffi.h vendor/librabe-ffi/Cargo.{toml,lock} vendor/cover_crypt/Cargo.{toml,lock} bindings/ffi/covercrypt/Cargo.{toml,lock}
 } | "${hash[@]}" | cut -d' ' -f1)"
 outputs=(lib/cryptopp/libcryptopp.a lib/liboqs/liboqs.a lib/rabe/librabe_ffi.a lib/covercrypt/libcovercrypt_ffi.a lib/tkn20/tkn20.wasm lib/tkn20/wasm_exec.js include/cryptopp/aes.h include/liboqs/oqs/oqs.h include/rabe/rabe.h include/covercrypt/covercrypt_ffi.h)
 cached=true
@@ -136,8 +143,8 @@ for dep in rabe covercrypt; do
     manifest=vendor/librabe-ffi/Cargo.toml; name=rabe_ffi
     header=vendor/librabe-ffi/rabe.h
   else
-    manifest=bindings/covercrypt/Cargo.toml; name=covercrypt_ffi
-    header=bindings/covercrypt/include/covercrypt_ffi.h
+    manifest=bindings/ffi/covercrypt/Cargo.toml; name=covercrypt_ffi
+    header=bindings/ffi/covercrypt/include/covercrypt_ffi.h
   fi
   echo "==> $dep (Rust/Emscripten static archive)"
   target_dir="$WORK/rust-$dep"
@@ -153,7 +160,7 @@ done
 echo '==> TKN20 (Go js/wasm runtime)'
 mkdir -p "$DEPS/lib/tkn20"
 (
-  cd bindings/tkn20
+  cd bindings/ffi/tkn20
   GOOS=js GOARCH=wasm CGO_ENABLED=0 go build -mod=readonly -p "$JOBS" -o "$DEPS/lib/tkn20/tkn20.wasm" .
   goroot="$(go env GOROOT)"
   if (( windows )); then goroot="$(cygpath -u "$goroot")"; fi

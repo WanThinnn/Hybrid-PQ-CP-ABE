@@ -46,7 +46,7 @@ jobs:
           go-version-file: plugins/vault/vault-plugin-abe/go.mod
           cache-dependency-path: |
             plugins/vault/vault-plugin-abe/go.sum
-            bindings/tkn20/go.sum
+            bindings/ffi/tkn20/go.sum
 
       - name: Install Linux build tools
         run: |
