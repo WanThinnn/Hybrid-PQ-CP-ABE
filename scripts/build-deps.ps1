@@ -22,7 +22,7 @@ $DepsDir = Join-Path $Root "build\deps\windows"
 $WorkDir = Join-Path $DepsDir ".work"
 $IncludeDir = Join-Path $DepsDir "include"
 $LibDir = Join-Path $DepsDir "lib"
-$BuildVersion = "6"
+$BuildVersion = "7"
 
 $TotalJobs = $Jobs
 if ($TotalJobs -le 0 -and $env:JOBS -match '^\d+$') {
@@ -49,7 +49,7 @@ Write-Host "Dependency build starting: windows (total jobs=$TotalJobs)"
 
 New-Item -ItemType Directory -Force -Path $WorkDir, $IncludeDir, $LibDir | Out-Null
 
-$Required = @("cmake", "msbuild", "cargo", "go", "gcc", "lib.exe", "cl.exe")
+$Required = @("cmake", "msbuild", "cargo", "go", "gcc", "lib.exe", "cl.exe", "python")
 foreach ($Tool in $Required) {
     if (-not (Get-Command $Tool -ErrorAction SilentlyContinue)) {
         throw "Missing required tool: $Tool"
@@ -82,14 +82,19 @@ function Get-FileDigest([string]$Path) {
 }
 
 function Get-FingerprintPath([string]$Name) {
+    if ($Name -eq 'cryptopp-dll') { return Join-Path $LibDir 'cryptopp\.dll-fingerprint' }
     return Join-Path (Join-Path $LibDir $Name) ".fingerprint"
 }
 
-function Test-DependencyCache([string]$Name, [string]$Fingerprint, [string[]]$Outputs) {
-    $FingerprintPath = Get-FingerprintPath $Name
-    if (-not (Test-Path $FingerprintPath)) { return $false }
-    if (-not (Select-String -Path $FingerprintPath -SimpleMatch "fingerprint=$Fingerprint" -Quiet)) { return $false }
+function Get-NativeFingerprint([string]$Name, [string]$Context) {
+    $Value = & python scripts/native-dependency-cache.py fingerprint windows $Name $Context
+    if ($LASTEXITCODE -ne 0) { throw "Cannot fingerprint dependency: $Name" }
+    return ($Value -join "`n").Trim()
+}
 
+function Test-DependencyCache([string]$Name, [string]$Fingerprint, [string[]]$Outputs) {
+    & python scripts/native-dependency-cache.py check windows $Name $Fingerprint
+    if ($LASTEXITCODE -ne 0) { return $false }
     foreach ($Output in $Outputs) {
         if (-not (Test-Path $Output)) { return $false }
     }
@@ -97,6 +102,8 @@ function Test-DependencyCache([string]$Name, [string]$Fingerprint, [string[]]$Ou
 }
 
 function Write-DependencyFingerprint([string]$Name, [string]$Fingerprint, [string[]]$Extra = @()) {
+    & python scripts/native-dependency-cache.py record windows $Name $Fingerprint
+    if ($LASTEXITCODE -ne 0) { throw "Cannot record dependency outputs: $Name" }
     $DepLibDir = Join-Path $LibDir $Name
     New-Item -ItemType Directory -Force -Path $DepLibDir | Out-Null
 
@@ -124,7 +131,7 @@ function Build-CryptoPPStatic {
     $Toolchain = (Get-Command cl.exe).Source
     $RuntimeProps = Join-Path $PSScriptRoot "cryptopp-msvc.props"
     $RuntimePropsHash = Get-FileDigest $RuntimeProps
-    $Fingerprint = Get-TextHash "cryptopp|$BuildVersion|windows|$Upstream|$Toolchain|Release|x64|MSVC|out-of-source|$RuntimePropsHash"
+    $Fingerprint = Get-NativeFingerprint "cryptopp" "cryptopp|$BuildVersion|windows|$Upstream|$Toolchain|Release|x64|MSVC|out-of-source|$RuntimePropsHash"
 
     $DepLibDir = Join-Path $LibDir "cryptopp"
     $DepIncludeDir = Join-Path $IncludeDir "cryptopp"
@@ -167,26 +174,27 @@ function Build-CryptoPPDll {
     $DllSourceHash = Get-FileDigest "vendor\cryptopp\dll.cpp"
     $Upstream = Get-FileDigest "vendor\cryptopp\UPSTREAM.md"
     $Toolchain = (Get-Command cl.exe).Source
-    $Fingerprint = Get-TextHash "cryptopp-dll|$BuildVersion|$Upstream|$Toolchain|x64|Release|MD|$RuntimePropsHash|$DllPropsHash|$SelfTestHash|$DllSourceHash"
+    $Fingerprint = Get-NativeFingerprint "cryptopp-dll" "cryptopp-dll|$BuildVersion|$Upstream|$Toolchain|x64|Release|MD|$RuntimePropsHash|$DllPropsHash|$SelfTestHash|$DllSourceHash"
     $DepLibDir = Join-Path $LibDir "cryptopp"
     $Dll = Join-Path $DepLibDir "cryptopp.dll"
     $ImportLib = Join-Path $DepLibDir "cryptopp.lib"
     $FingerprintPath = Join-Path $DepLibDir ".dll-fingerprint"
-    if ((Test-Path $Dll) -and (Test-Path $ImportLib) -and (Test-Path $FingerprintPath)) {
-        if (Select-String -Path $FingerprintPath -SimpleMatch "fingerprint=$Fingerprint" -Quiet) {
-            Write-Host "==> Crypto++ DLL: cached"
-            return
-        }
+    if (Test-DependencyCache "cryptopp-dll" $Fingerprint @($Dll, $ImportLib)) {
+        Write-Host "==> Crypto++ DLL: cached"
+        return
     }
     $Work = Join-Path $WorkDir "cryptopp-dll"
     $OutDir = Join-Path $Work "out"
     $ObjDir = Join-Path $Work "obj"
+    Remove-Item $Work -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force -Path $OutDir, $ObjDir | Out-Null
     Write-Host "==> Crypto++ DLL ($InnerJobs jobs, MSVC x64, /MD)"
     & msbuild "vendor\cryptopp\cryptdll.vcxproj" "/m:$InnerJobs" /p:Configuration=Release /p:Platform=x64 "/p:OutDir=$OutDir\" "/p:IntDir=$ObjDir\" "/p:ForceImportBeforeCppTargets=$DllProps"
     if ($LASTEXITCODE -ne 0) { throw "Crypto++ DLL build failed" }
     Copy-Item (Join-Path $OutDir "cryptopp.dll") $Dll -Force
     Copy-Item (Join-Path $OutDir "cryptopp.lib") $ImportLib -Force
+    & python scripts/native-dependency-cache.py record windows cryptopp-dll $Fingerprint
+    if ($LASTEXITCODE -ne 0) { throw "Cannot record Crypto++ DLL outputs" }
     "fingerprint=$Fingerprint" | Set-Content $FingerprintPath
     Remove-Item $Work -Recurse -Force
     Write-Host "Crypto++ DLL: $Dll"
@@ -201,7 +209,7 @@ function Build-LibOqs {
     $CompilerOptsHash = Get-FileDigest "vendor\liboqs\.CMake\compiler_opts.cmake"
     $CMakeHash = Get-FileDigest "vendor\liboqs\CMakeLists.txt"
     $CommonHeaderHash = Get-FileDigest "vendor\liboqs\src\common\common.h"
-    $Fingerprint = Get-TextHash "liboqs|$BuildVersion|windows|$Upstream|$Toolchain|$Generator|ML-KEM+ML-DSA|minimal|static+shared|PIC|no-openssl|MD|$CompilerOptsHash|$CMakeHash|$CommonHeaderHash"
+    $Fingerprint = Get-NativeFingerprint "liboqs" "liboqs|$BuildVersion|windows|$Upstream|$Toolchain|$Generator|ML-KEM+ML-DSA|minimal|static+shared|PIC|no-openssl|MD|$CompilerOptsHash|$CMakeHash|$CommonHeaderHash"
 
     $DepLibDir = Join-Path $LibDir "liboqs"
     $DepIncludeDir = Join-Path $IncludeDir "liboqs"
@@ -220,7 +228,7 @@ function Build-LibOqs {
     }
 
     Write-Host "==> liboqs ($InnerJobs jobs, $Generator, MSVC, static + shared)"
-    Remove-Item $DepLibDir, (Join-Path $IncludeDir "oqs"), $DepIncludeDir, $StageStatic, $StageShared -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item $DepLibDir, (Join-Path $IncludeDir "oqs"), $DepIncludeDir, $StageStatic, $StageShared, $WorkStatic, $WorkShared -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force -Path $WorkStatic, $WorkShared, $StageStatic, $StageShared, $DepLibDir, $DepIncludeDir | Out-Null
 
     $BaseArgs = @(
@@ -302,7 +310,7 @@ function Build-Rabe {
 
     $NormalizeScript = Join-Path $PSScriptRoot "normalize-msvc-library.ps1"
     $NormalizeHash = Get-FileDigest $NormalizeScript
-    $Fingerprint = Get-TextHash "rabe|$BuildVersion|windows|$Upstream|$Lock|$Header|$RustVersion|$RustTarget|$RustToolchain|release|panic=unwind|lto=false|$NormalizeHash"
+    $Fingerprint = Get-NativeFingerprint "rabe" "rabe|$BuildVersion|windows|$Upstream|$Lock|$Header|$RustVersion|$RustTarget|$RustToolchain|release|panic=unwind|lto=false|$NormalizeHash"
 
     $DepLibDir = Join-Path $LibDir "rabe"
     $DepIncludeDir = Join-Path $IncludeDir "rabe"
@@ -310,7 +318,7 @@ function Build-Rabe {
     $OutLib = Join-Path $DepLibDir "librabe_ffi.lib"
     $RabeHeader = Join-Path $DepIncludeDir "rabe.h"
 
-    if (Test-DependencyCache "rabe" $Fingerprint @($OutLib, $RabeHeader)) {
+    if (Test-DependencyCache "rabe" $Fingerprint @($OutLib, (Join-Path $DepLibDir 'rabe_ffi.dll'), $RabeHeader)) {
         Write-Host "==> librabe-ffi: cached"
         return
     }
@@ -373,7 +381,7 @@ function Build-CoverCrypt([bool]$RunTests = $false) {
             "bindings\covercrypt\Cargo.toml", "bindings\covercrypt\Cargo.lock", "bindings\covercrypt\include\covercrypt_ffi.h", "scripts\normalize-msvc-library.ps1"
     )
     $Digests = ($Inputs | Sort-Object FullName | ForEach-Object { Get-FileDigest $_.FullName }) -join '|'
-    $Fingerprint = Get-TextHash "covercrypt|$BuildVersion|$Target|$Version|$Digests|mlkem-768|curve25519"
+    $Fingerprint = Get-NativeFingerprint "covercrypt" "covercrypt|$BuildVersion|$Target|$Version|$Digests|mlkem-768|curve25519"
     $DepLibDir = Join-Path $LibDir "covercrypt"
     $DepIncludeDir = Join-Path $IncludeDir "covercrypt"
     $OutLib = Join-Path $DepLibDir "libcovercrypt_ffi.lib"
@@ -392,6 +400,8 @@ function Build-CoverCrypt([bool]$RunTests = $false) {
         return
     }
     Write-Host "==> CoverCrypt ($InnerJobs jobs, MSVC, Curve25519 + ML-KEM-768, static + shared C ABI)"
+    # Cargo's timestamp cache must not defeat content-based invalidation.
+    Remove-Item $Work, $DepLibDir, $DepIncludeDir -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force -Path $DepLibDir, $DepIncludeDir | Out-Null
     $env:CARGO_TARGET_DIR = $Work
     $Sccache = Get-Sccache
@@ -419,7 +429,7 @@ function Build-Tkn20 {
         throw "Windows TKN20 CGO requires MinGW-w64 gcc; detected: $GccMachine"
     }
 
-    $Fingerprint = Get-TextHash "tkn20|$BuildVersion|windows|$Upstream|$GoMod|$GoSum|$Bridge|$DefHash|$GoVersion|$GccPath|$GccMachine|dll-c-abi"
+    $Fingerprint = Get-NativeFingerprint "tkn20" "tkn20|$BuildVersion|windows|$Upstream|$GoMod|$GoSum|$Bridge|$DefHash|$GoVersion|$GccPath|$GccMachine|dll-c-abi"
 
     $DepLibDir = Join-Path $LibDir "tkn20"
     $DepIncludeDir = Join-Path $IncludeDir "tkn20"
@@ -516,17 +526,8 @@ function Show-Outputs {
 }
 
 function Write-ReadyMarker {
-    $Ready = Join-Path $LibDir ".ready"
-    @(
-        "platform=windows",
-        "build_version=$BuildVersion",
-        "cryptopp=$(Get-FileDigest (Get-FingerprintPath 'cryptopp'))",
-        "cryptopp_dll=$(Get-FileDigest (Join-Path $LibDir 'cryptopp\.dll-fingerprint'))",
-        "liboqs=$(Get-FileDigest (Get-FingerprintPath 'liboqs'))",
-        "rabe=$(Get-FileDigest (Get-FingerprintPath 'rabe'))",
-        "tkn20=$(Get-FileDigest (Get-FingerprintPath 'tkn20'))"
-        "covercrypt=$(Get-FileDigest (Get-FingerprintPath 'covercrypt'))"
-    ) | Set-Content $Ready
+    & python scripts/native-dependency-cache.py ready windows all
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot mark incomplete dependencies ready' }
 }
 
 function Build-All {

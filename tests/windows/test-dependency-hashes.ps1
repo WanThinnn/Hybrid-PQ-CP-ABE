@@ -6,7 +6,7 @@ $ParseErrors = $null
 $Ast = [Management.Automation.Language.Parser]::ParseFile(
     (Join-Path $Root 'scripts\build-deps.ps1'), [ref]$Tokens, [ref]$ParseErrors)
 if ($ParseErrors.Count) { throw ($ParseErrors | Out-String) }
-foreach ($FunctionName in @('Get-FileDigest', 'Get-FingerprintPath', 'Write-ReadyMarker')) {
+foreach ($FunctionName in @('Get-FileDigest', 'Get-FingerprintPath')) {
     $Definition = $Ast.Find({ param($Node)
         $Node -is [Management.Automation.Language.FunctionDefinitionAst] -and $Node.Name -eq $FunctionName
     }, $true)
@@ -34,19 +34,8 @@ try {
     } catch {
         if ($_.Exception.Message -eq 'Expected a missing-file error') { throw }
     }
-    $LibDir = Join-Path $TestDirectory 'lib'
-    $BuildVersion = 'test'
-    foreach ($Name in @('cryptopp', 'liboqs', 'rabe', 'tkn20', 'covercrypt')) {
-        [void][IO.Directory]::CreateDirectory((Join-Path $LibDir $Name))
-        [IO.File]::WriteAllBytes((Get-FingerprintPath $Name), [byte[]]@(97, 98, 99))
-    }
-    [IO.File]::WriteAllBytes((Join-Path $LibDir 'cryptopp\.dll-fingerprint'), [byte[]]@(97, 98, 99))
-    Write-ReadyMarker
-    $Ready = [IO.File]::ReadAllText((Join-Path $LibDir '.ready')) -split '\r?\n'
-    foreach ($Name in @('cryptopp', 'cryptopp_dll', 'liboqs', 'rabe', 'tkn20', 'covercrypt')) {
-        if ($Ready -cnotcontains "$Name=$AbcDigest") { throw "Ready-marker digest mismatch: $Name" }
-    }
-    Write-Host 'PASS: all six ready-marker digests without Get-FileHash'
+    # Readiness now validates output integrity via the shared Python helper.
+    # Its complete/incomplete marker cases live in test_native_dependency_cache.py.
 } finally {
     Set-Location $OriginalLocation
     $CleanupPath = [IO.Path]::GetFullPath($TestDirectory)

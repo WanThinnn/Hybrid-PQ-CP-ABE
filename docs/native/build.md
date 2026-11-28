@@ -35,10 +35,39 @@ and check [the Vault module](../../plugins/vault/vault-plugin-abe/go.mod) when
 building the plugin. Windows also requires the MSVC x64 build tools and
 MinGW-w64 `gcc` for Go CGO/TKN20.
 
-The root `VERSION` file is the version source of truth. Make generates the public
-`include/hybrid_pq_cp_abe/version.h` header and embeds that value in the library
-and CLI. Changing `VERSION` triggers an incremental rebuild; deployed binaries
-do not need to find a `VERSION` file at runtime.
+The root `VERSION` file holds the official version used by the website and release
+packaging. Native and WASM builds use it by default. To build the development
+version, select `VERSION-DEV` with the `VERSION_FILE` environment variable or a
+Make command-line variable:
+
+```cmd
+:: Windows: x64 Native Tools Command Prompt
+set VERSION_FILE=VERSION-DEV
+make -j8
+:: Return to the official version in this session:
+set VERSION_FILE=
+```
+
+```powershell
+$env:VERSION_FILE = 'VERSION-DEV'
+make -j8
+Remove-Item Env:VERSION_FILE
+```
+
+```bash
+# Linux/macOS/WSL: applies only to this command
+VERSION_FILE=VERSION-DEV make -j8
+# Also works for WASM:
+make wasm VERSION_FILE=VERSION-DEV -j8
+```
+
+`make VERSION_FILE=VERSION-DEV -j8` also works in Windows cmd or PowerShell.
+Make generates `include/hybrid_pq_cp_abe/version.h` and embeds the selected value
+in the library and CLI. Switching version files works even when the selected file
+is older than the header; unchanged values preserve the header timestamp. The
+version is fixed at build time, so deployed binaries do not read either version
+file or the environment variable at runtime. This option selects the compiled
+version only; release packaging continues to use the official `VERSION` file.
 
 ### 2. Configure for your machine
 
@@ -199,7 +228,9 @@ Temporary CMake/Cargo/Go/Crypto++ build trees are removed after success. Fingerp
 ```sh
 make -j8
 ```
-The core consumes headers and libraries directly from `build/deps/<platform>/`. After a successful dependency build, `build/deps/<platform>/lib/.ready` marks the dependency set as ready; normal `make -jN` builds do not run the dependency scripts again and go straight to the native core.
+The core consumes headers and libraries directly from `build/deps/<platform>/`. Every native `make -jN` checks dependency input fingerprints and staged-output SHA-256 records before compiling the core. Unchanged dependencies retain their outputs and timestamps. Source, configuration, flags or toolchain changes rebuild the affected dependencies; missing or modified staged files also invalidate the cache. Python 3 is required (`python` on Windows, `python3` on Linux/macOS).
+
+`build/deps/<platform>/lib/.ready` is written atomically only after all five dependencies have valid output records (including the separate Crypto++ DLL on Windows). The marker is unchanged on a cache hit. The `.integrity.json` records are local cache checks, not signed provenance or protection against someone who can replace both a binary and its checksum record. Existing caches without these records rebuild once.
 
 ### 5. Run tests
 
@@ -330,7 +361,7 @@ See [build/README.md](../../build/README.md) for the output layout. Keep logs un
 ### Available Make Commands
 
 - `make deps -j8`: Build/check the five native dependencies and print their final include/library layout.
-- `make -j8`: Build the native C++ core directly from the existing dependency output. It only auto-builds dependencies when the ready marker is missing (fresh clone or after `make clean-deps`).
+- `make -j8`: Check the dependency cache, rebuild dependencies as needed, then build the native C++ core incrementally.
 - `make clean-deps`: Remove `build/deps/<platform>/`.
 - `make static`: Build only the project static library.
 - `make shared`: Build only the project shared library.

@@ -25,7 +25,7 @@ DEPS_DIR="$ROOT/build/deps/$PLATFORM"
 WORK_DIR="$DEPS_DIR/.work"
 INCLUDE_DIR="$DEPS_DIR/include"
 LIB_DIR="$DEPS_DIR/lib"
-BUILD_VERSION="6"
+BUILD_VERSION="7"
 
 TOTAL_JOBS="${EXPLICIT_JOBS:-${JOBS:-}}"
 if [[ -z "$TOTAL_JOBS" && "${MAKEFLAGS:-}" =~ (^|[[:space:]])-?j[[:space:]]*([0-9]+)($|[[:space:]]) ]]; then
@@ -51,7 +51,7 @@ fi
 unset MAKEFLAGS MFLAGS MAKELEVEL
 INNER_JOBS="$TOTAL_JOBS"
 
-required=(cmake make cargo rustc go)
+required=(cmake make cargo rustc go python3)
 if [[ "$PLATFORM" == "macos" ]]; then
   required+=(clang++)
 else
@@ -80,14 +80,15 @@ fingerprint_file() {
   printf '%s/%s/.fingerprint' "$LIB_DIR" "$1"
 }
 
+native_fingerprint() {
+  python3 scripts/native-dependency-cache.py fingerprint "$PLATFORM" "$1" "$2"
+}
+
 cache_matches() {
   local name="$1"
   local fingerprint="$2"
   shift 2
-  local fp
-  fp="$(fingerprint_file "$name")"
-  [[ -f "$fp" ]] || return 1
-  grep -Fxq "fingerprint=$fingerprint" "$fp" || return 1
+  python3 scripts/native-dependency-cache.py check "$PLATFORM" "$name" "$fingerprint" || return 1
   local output
   for output in "$@"; do
     [[ -f "$output" ]] || return 1
@@ -98,6 +99,7 @@ cache_matches() {
 write_fingerprint() {
   local name="$1"
   local fingerprint="$2"
+  python3 scripts/native-dependency-cache.py record "$PLATFORM" "$name" "$fingerprint"
   mkdir -p "$LIB_DIR/$name"
   {
     printf 'fingerprint=%s\n' "$fingerprint"
@@ -116,7 +118,7 @@ build_cryptopp() {
     compiler="$(g++ --version | head -n 1)"
     cxx="g++"
   fi
-  fingerprint="$(hash_text "cryptopp|$BUILD_VERSION|$PLATFORM|$upstream|$compiler|-O2|-fPIC|static+shared|staged-worktree")"
+  fingerprint="$(native_fingerprint cryptopp "cryptopp|$BUILD_VERSION|$PLATFORM|$upstream|$compiler|-O2|-fPIC|static+shared|staged-worktree")"
   outlib="$LIB_DIR/cryptopp/libcryptopp.a"
   local shared_out
   if [[ "$PLATFORM" == "macos" ]]; then
@@ -172,7 +174,7 @@ build_liboqs() {
     generator="Unix Makefiles"
   fi
 
-  fingerprint="$(hash_text "liboqs|$BUILD_VERSION|$PLATFORM|$upstream|$compiler|$generator|ML-KEM+ML-DSA|minimal|static+shared|PIC|no-openssl")"
+  fingerprint="$(native_fingerprint liboqs "liboqs|$BUILD_VERSION|$PLATFORM|$upstream|$compiler|$generator|ML-KEM+ML-DSA|minimal|static+shared|PIC|no-openssl")"
   outlib="$LIB_DIR/liboqs/liboqs.a"
   if [[ "$PLATFORM" == "macos" ]]; then
     shared_out="$LIB_DIR/liboqs/liboqs.dylib"
@@ -191,7 +193,7 @@ build_liboqs() {
   stage_static="$WORK_DIR/liboqs-stage-static"
   stage_shared="$WORK_DIR/liboqs-stage-shared"
 
-  rm -rf "$INCLUDE_DIR/oqs" "$INCLUDE_DIR/liboqs" "$LIB_DIR/liboqs" "$stage_static" "$stage_shared"
+  rm -rf "$INCLUDE_DIR/oqs" "$INCLUDE_DIR/liboqs" "$LIB_DIR/liboqs" "$stage_static" "$stage_shared" "$work_static" "$work_shared"
   mkdir -p "$work_static" "$work_shared" "$stage_static" "$stage_shared" "$INCLUDE_DIR/liboqs" "$LIB_DIR/liboqs"
 
   local cmake_args=(
@@ -244,10 +246,12 @@ build_rabe() {
   lock="$(hash_file vendor/librabe-ffi/Cargo.lock)"
   header="$(hash_file vendor/librabe-ffi/rabe.h)"
   rustc_info="$(rustc -vV)"
-  fingerprint="$(hash_text "rabe|$BUILD_VERSION|$PLATFORM|$upstream|$lock|$header|$rustc_info|release|panic=unwind|lto=false")"
+  fingerprint="$(native_fingerprint rabe "rabe|$BUILD_VERSION|$PLATFORM|$upstream|$lock|$header|$rustc_info|release|panic=unwind|lto=false")"
   outlib="$LIB_DIR/rabe/librabe_ffi.a"
 
-  if cache_matches rabe "$fingerprint" "$outlib" "$INCLUDE_DIR/rabe/rabe.h"; then
+  local shared_name="librabe_ffi.so"
+  [[ "$PLATFORM" == "macos" ]] && shared_name="librabe_ffi.dylib"
+  if cache_matches rabe "$fingerprint" "$outlib" "$LIB_DIR/rabe/$shared_name" "$INCLUDE_DIR/rabe/rabe.h"; then
     echo "==> librabe-ffi: cached"
     return
   fi
@@ -278,7 +282,7 @@ build_rabe() {
 build_covercrypt() {
   local digest fingerprint work outlib shared_name outshared
   digest="$( { find vendor/cover_crypt/src bindings/covercrypt/src -type f; printf '%s\n' vendor/cover_crypt/Cargo.toml vendor/cover_crypt/Cargo.lock vendor/cover_crypt/UPSTREAM.md bindings/covercrypt/Cargo.toml bindings/covercrypt/Cargo.lock bindings/covercrypt/include/covercrypt_ffi.h; } | LC_ALL=C sort | while IFS= read -r input; do hash_file "$input"; done )"
-  fingerprint="$(hash_text "covercrypt|$BUILD_VERSION|$PLATFORM|$(rustc -vV)|$digest|curve25519|mlkem-768")"
+  fingerprint="$(native_fingerprint covercrypt "covercrypt|$BUILD_VERSION|$PLATFORM|$(rustc -vV)|$digest|curve25519|mlkem-768")"
   outlib="$LIB_DIR/covercrypt/libcovercrypt_ffi.a"
   if [[ "$PLATFORM" == macos ]]; then
     shared_name="libcovercrypt_ffi.dylib"
@@ -292,6 +296,8 @@ build_covercrypt() {
   fi
   echo "==> CoverCrypt ($INNER_JOBS jobs, Curve25519 + ML-KEM-768, static + shared C ABI)"
   work="$WORK_DIR/covercrypt-target"
+  # Cargo's timestamp cache must not defeat our content-based invalidation.
+  rm -rf "$work" "$LIB_DIR/covercrypt" "$INCLUDE_DIR/covercrypt"
   mkdir -p "$LIB_DIR/covercrypt" "$INCLUDE_DIR/covercrypt"
   CARGO_TARGET_DIR="$work" cargo build --locked --release --jobs "$INNER_JOBS" --manifest-path bindings/covercrypt/Cargo.toml
   cp "$work/release/libcovercrypt_ffi.a" "$outlib"
@@ -313,10 +319,12 @@ build_tkn20() {
   gover="$(go version)"
   cc="${CC:-cc}"
   ccver="$($cc --version | head -n 1)"
-  fingerprint="$(hash_text "tkn20|$BUILD_VERSION|$PLATFORM|$upstream|$gomod|$gosum|$bridge|$gover|$ccver")"
+  fingerprint="$(native_fingerprint tkn20 "tkn20|$BUILD_VERSION|$PLATFORM|$upstream|$gomod|$gosum|$bridge|$gover|$ccver")"
   outlib="$LIB_DIR/tkn20/libcpabe_tkn20.a"
 
-  if cache_matches tkn20 "$fingerprint" "$outlib" "$INCLUDE_DIR/tkn20/cpabe_tkn20.h"; then
+  local shared_name="libcpabe_tkn20.so"
+  [[ "$PLATFORM" == "macos" ]] && shared_name="libcpabe_tkn20.dylib"
+  if cache_matches tkn20 "$fingerprint" "$outlib" "$LIB_DIR/tkn20/$shared_name" "$INCLUDE_DIR/tkn20/cpabe_tkn20.h"; then
     echo "==> CIRCL/TKN20: cached"
     return
   fi
@@ -371,16 +379,7 @@ print_outputs() {
 }
 
 write_ready_marker() {
-  mkdir -p "$LIB_DIR"
-  {
-    printf 'platform=%s\n' "$PLATFORM"
-    printf 'build_version=%s\n' "$BUILD_VERSION"
-    printf 'cryptopp=%s\n' "$(hash_file "$LIB_DIR/cryptopp/.fingerprint")"
-    printf 'liboqs=%s\n' "$(hash_file "$LIB_DIR/liboqs/.fingerprint")"
-    printf 'rabe=%s\n' "$(hash_file "$LIB_DIR/rabe/.fingerprint")"
-    printf 'tkn20=%s\n' "$(hash_file "$LIB_DIR/tkn20/.fingerprint")"
-    printf 'covercrypt=%s\n' "$(hash_file "$LIB_DIR/covercrypt/.fingerprint")"
-  } > "$LIB_DIR/.ready"
+  python3 scripts/native-dependency-cache.py ready "$PLATFORM" all
 }
 
 run_dep() {

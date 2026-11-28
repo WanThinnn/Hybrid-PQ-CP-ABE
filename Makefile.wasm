@@ -1,6 +1,7 @@
 # WebAssembly from Linux/WSL, macOS, or Windows MSYS2.
 SHELL := /bin/bash
 .DEFAULT_GOAL := all
+VERSION_FILE ?= VERSION
 ifneq ($(filter Windows_NT %msys,$(OS) $(MAKE_HOST)),)
 HOST_SUFFIX := -windows
 else ifeq ($(shell uname -s),Darwin)
@@ -36,8 +37,10 @@ deps:
 $(READY):
 	@bash scripts/build-wasm-deps.sh $(JOBS)
 
-include/hybrid_pq_cp_abe/version.h: VERSION
-	@printf '%s\n' '// Generated from VERSION; do not edit.' '#ifndef HYBRID_CP_ABE_VERSION_H' '#define HYBRID_CP_ABE_VERSION_H' '#define HCPABE_LIB_VERSION "$(shell tr -d '\r' < VERSION)"' '#endif' > $@
+.PHONY: FORCE_VERSION
+FORCE_VERSION:
+include/hybrid_pq_cp_abe/version.h: $(VERSION_FILE) scripts/generate-version-header.py FORCE_VERSION
+	@python3 scripts/generate-version-header.py "$(VERSION_FILE)" "$@"
 
 $(BUILD_DIR)/obj/%.o: %.cpp $(HEADERS) include/hybrid_pq_cp_abe/version.h | $(READY)
 	@mkdir -p $(dir $@)

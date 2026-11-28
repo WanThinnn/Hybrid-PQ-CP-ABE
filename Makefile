@@ -9,6 +9,7 @@
 
 BUILD_ROOT = build
 VERSION_HEADER = include/hybrid_pq_cp_abe/version.h
+VERSION_FILE ?= VERSION
 # Override with e.g. make CXX_STANDARD=c++20.
 CXX_STANDARD ?= c++17
 
@@ -46,12 +47,9 @@ ifeq ($(PLATFORM),windows)
 endif
 
 ifeq ($(PLATFORM),windows)
-    LIB_VERSION := $(strip $(shell cmd.exe /d /c type VERSION))
+    VERSION_PYTHON = python
 else
-    LIB_VERSION := $(strip $(shell cat VERSION))
-endif
-ifeq ($(LIB_VERSION),)
-    $(error VERSION must contain the library version)
+    VERSION_PYTHON = python3
 endif
 
 BUILD_DIR = $(BUILD_ROOT)/artifacts/$(PLATFORM)
@@ -96,8 +94,8 @@ TKN20_HEADER = $(TKN20_INC_DIR)/cpabe_tkn20.h
 COVERCRYPT_HEADER = $(DEPS_INC_DIR)/covercrypt/covercrypt_ffi.h
 COVERCRYPT_TEST_SRC = tests/cpp/covercrypt_test.cpp
 PARAMS_TEST_SRC = tests/cpp/params_test.cpp
-# Core builds reuse staged dependencies. Only a missing ready marker triggers
-# automatic dependency setup; changed dependency sources require make deps.
+# Check dependency inputs and output integrity on every build. Cache hits keep
+# staged files and .ready timestamps unchanged; only changed deps rebuild.
 CRYPTOPP_HEADERS = $(DEPS_INC_DIR)/cryptopp/aes.h $(DEPS_INC_DIR)/cryptopp/gcm.h $(DEPS_INC_DIR)/cryptopp/filters.h \
                    $(DEPS_INC_DIR)/cryptopp/osrng.h $(DEPS_INC_DIR)/cryptopp/sha.h $(DEPS_INC_DIR)/cryptopp/sha3.h \
                    $(DEPS_INC_DIR)/cryptopp/base64.h
@@ -197,17 +195,19 @@ endif
 
 .DEFAULT_GOAL := all
 
-# Generated SDK header: bake VERSION into binaries without a runtime file lookup.
-$(VERSION_HEADER): VERSION Makefile
-ifeq ($(PLATFORM),windows)
-	@> "$(subst /,\,$@)" echo // Generated from VERSION; do not edit.
-	@>> "$(subst /,\,$@)" echo #ifndef HYBRID_CP_ABE_VERSION_H
-	@>> "$(subst /,\,$@)" echo #define HYBRID_CP_ABE_VERSION_H
-	@>> "$(subst /,\,$@)" echo #define HCPABE_LIB_VERSION "$(LIB_VERSION)"
-	@>> "$(subst /,\,$@)" echo #endif
-else
-	@printf '%s\n' '// Generated from VERSION; do not edit.' '#ifndef HYBRID_CP_ABE_VERSION_H' '#define HYBRID_CP_ABE_VERSION_H' '#define HCPABE_LIB_VERSION "$(LIB_VERSION)"' '#endif' > "$@"
-endif
+.PHONY: FORCE_DEPS
+FORCE_DEPS:
+
+# A phony prerequisite runs the check without forcing downstream recompiles:
+# the builder writes .ready only when its contents change.
+$(DEPS_READY): FORCE_DEPS
+
+# Check even when switching to an older VERSION_FILE. The generator preserves
+# the header timestamp on a no-op, so unchanged builds stay incremental.
+.PHONY: FORCE_VERSION
+FORCE_VERSION:
+$(VERSION_HEADER): $(VERSION_FILE) scripts/generate-version-header.py FORCE_VERSION
+	@$(VERSION_PYTHON) scripts/generate-version-header.py "$(VERSION_FILE)" "$@"
 
 .PHONY: all clean deps clean-deps executable install shared static benchmark-bridge help test tests abi-info vault test-vault clean-vault
 
@@ -276,10 +276,7 @@ endif
 # by GNU Make's jobserver. This avoids stale jobserver pipe/file descriptors
 # leaking into Cargo/sub-make/CMake/Go while still honoring make -jN.
 ifeq ($(PLATFORM),windows)
-deps: SHELL = sh.exe
-deps: .SHELLFLAGS = -c
-deps:
-	@powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-deps.ps1 -Dependency all
+deps: $(DEPS_READY)
 
 $(DEPS_READY): SHELL = sh.exe
 $(DEPS_READY): .SHELLFLAGS = -c
@@ -293,8 +290,7 @@ clean-deps:
 	@rm -rf build/deps/windows
 	@echo Done! Dependency cache cleared.
 else
-deps:
-	@bash scripts/build-deps.sh $(PLATFORM) all
+deps: $(DEPS_READY)
 
 $(DEPS_READY):
 	@bash scripts/build-deps.sh $(PLATFORM) all
@@ -358,13 +354,13 @@ $(OBJ_DIR): | $(BUILD_DIR)
 $(STATIC_OBJ_DIR) $(SHARED_OBJ_DIR) $(MAIN_OBJ_DIR): | $(OBJ_DIR)
 	@if not exist "$(subst /,\,$@)" mkdir "$(subst /,\,$@)"
 
-$(STATIC_OBJ_DIR)/%.obj: %.cpp $(COMMON_HEADERS) | $(DEPS_READY) $(STATIC_OBJ_DIR)
+$(STATIC_OBJ_DIR)/%.obj: %.cpp $(COMMON_HEADERS) Makefile $(DEPS_READY) | $(STATIC_OBJ_DIR)
 	$(CXX) $(CXXFLAGS) /Fo"$(subst /,\,$@)" /c "$<"
 
-$(SHARED_OBJ_DIR)/%.obj: %.cpp $(COMMON_HEADERS) | $(DEPS_READY) $(SHARED_OBJ_DIR)
+$(SHARED_OBJ_DIR)/%.obj: %.cpp $(COMMON_HEADERS) Makefile $(DEPS_READY) | $(SHARED_OBJ_DIR)
 	$(CXX) $(CXXFLAGS) $(DLL_DEFINE) /Fo"$(subst /,\,$@)" /c "$<"
 
-$(MAIN_OBJ): $(MAIN_SRC) $(COMMON_HEADERS) | $(DEPS_READY) $(MAIN_OBJ_DIR)
+$(MAIN_OBJ): $(MAIN_SRC) $(COMMON_HEADERS) Makefile $(DEPS_READY) | $(MAIN_OBJ_DIR)
 	$(CXX) $(CXXFLAGS) /Fo"$(subst /,\,$@)" /c "$(MAIN_SRC)"
 
 static: $(STATIC_LIB) $(PUBLISHED_TKN20_DLL)
@@ -396,7 +392,7 @@ install: $(EXEC) static shared $(TKN20_DLL) $(TKN20_IMPORT_LIB)
 benchmark-bridge:
 	@powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-benchmark-bridge.ps1
 
-$(EXEC): $(MAIN_OBJ) $(STATIC_LIB) $(TKN20_IMPORT_LIB) $(TKN20_DLL) | $(BUILD_DIR)
+$(EXEC): $(MAIN_OBJ) $(STATIC_LIB) $(TKN20_IMPORT_LIB) $(TKN20_DLL) Makefile | $(BUILD_DIR)
 	$(CXX) /nologo /Fe:"$(subst /,\,$@)" "$(subst /,\,$(MAIN_OBJ))" $(LDFLAGS) "$(subst /,\,$(STATIC_LIB))" $(foreach l,$(WIN_LINK_DEPS),"$(subst /,\,$(l))") $(WIN_SYSTEM_LIBS)
 	@copy /Y "$(subst /,\,$(TKN20_DLL))" "$(subst /,\,$(BUILD_DIR))\" >nul
 	@echo Done! Executable: $@
@@ -426,11 +422,11 @@ $(COVERCRYPT_TEST): $(COVERCRYPT_TEST_SRC) $(PROJECT_HEADERS) $(STATIC_LIB) $(CO
 
 $(STATIC_LIBS_GCC): | $(DEPS_READY)
 
-$(CORE_OBJ_DIR)/%.o: %.cpp $(COMMON_HEADERS) | $(DEPS_READY)
+$(CORE_OBJ_DIR)/%.o: %.cpp $(COMMON_HEADERS) Makefile $(DEPS_READY)
 	@mkdir -p $(CORE_OBJ_DIR)
 	$(CXX) $(CXXFLAGS) -c "$<" -o "$@"
 
-$(MAIN_OBJ): $(MAIN_SRC) $(COMMON_HEADERS) | $(DEPS_READY)
+$(MAIN_OBJ): $(MAIN_SRC) $(COMMON_HEADERS) Makefile $(DEPS_READY)
 	@mkdir -p $(MAIN_OBJ_DIR)
 	$(CXX) $(CXXFLAGS) -c "$(MAIN_SRC)" -o "$@"
 
@@ -496,7 +492,7 @@ else
 endif
 	@echo Done! Benchmark primitive bridge: $@
 
-$(EXEC): $(MAIN_OBJ) $(STATIC_LIB) $(STATIC_LIBS_GCC)
+$(EXEC): $(MAIN_OBJ) $(STATIC_LIB) $(STATIC_LIBS_GCC) Makefile
 	@mkdir -p $(BUILD_DIR)
 	$(CXX) $(MAIN_OBJ) -o $(EXEC) $(STATIC_LIB) $(STATIC_LIBS_GCC) $(LDFLAGS)
 	@echo Done! Executable: $(EXEC)
