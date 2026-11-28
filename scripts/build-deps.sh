@@ -63,6 +63,24 @@ done
 
 mkdir -p "$WORK_DIR" "$INCLUDE_DIR" "$LIB_DIR"
 
+LINUX_C_HARDENING=""
+LINUX_CXX_HARDENING=""
+LINUX_LD_HARDENING=""
+if [[ "$PLATFORM" == "linux" ]]; then
+  LINUX_C_HARDENING="$(python3 scripts/linux-hardening.py --compiler "${CC:-gcc}" --language c --format flags)"
+  LINUX_CXX_HARDENING="$(python3 scripts/linux-hardening.py --compiler g++ --language c++ --format flags)"
+  LINUX_LD_HARDENING="-Wl,-z,noexecstack -Wl,-z,relro -Wl,-z,now"
+  echo "Linux C hardening: $LINUX_C_HARDENING"
+  echo "Linux C++ hardening: $LINUX_CXX_HARDENING"
+fi
+
+linux_rust_hardening() {
+  if [[ "$PLATFORM" == "linux" ]]; then
+    # Preserve encoded user flags (Cargo gives them precedence over RUSTFLAGS).
+    export CARGO_ENCODED_RUSTFLAGS="$(python3 -c 'import os; flags = os.environ["CARGO_ENCODED_RUSTFLAGS"].split(chr(31)) if "CARGO_ENCODED_RUSTFLAGS" in os.environ else os.environ.get("RUSTFLAGS", "").split(); print(chr(31).join([f for f in flags if f] + ["-Crelro-level=full", "-Clink-arg=-Wl,-z,noexecstack"]))')"
+  fi
+}
+
 if command -v sha256sum >/dev/null 2>&1; then
   hash_text() { printf '%s' "$1" | sha256sum | cut -d' ' -f1; }
   hash_file() { sha256sum "$1" | cut -d' ' -f1; }
@@ -81,7 +99,7 @@ fingerprint_file() {
 }
 
 native_fingerprint() {
-  python3 scripts/native-dependency-cache.py fingerprint "$PLATFORM" "$1" "$2"
+  python3 scripts/native-dependency-cache.py fingerprint "$PLATFORM" "$1" "$2|linux_c=$LINUX_C_HARDENING|linux_cxx=$LINUX_CXX_HARDENING|linux_ld=$LINUX_LD_HARDENING"
 }
 
 cache_matches() {
@@ -146,7 +164,7 @@ build_cryptopp() {
   if [[ "$PLATFORM" == "macos" ]]; then
     make -C "$work" -j"$INNER_JOBS" static libcryptopp.dylib CXX="$cxx" CXXFLAGS="-DNDEBUG -O2 -fPIC"
   else
-    make -C "$work" -j"$INNER_JOBS" static libcryptopp.so CXX="$cxx" CXXFLAGS="-DNDEBUG -O2 -fPIC"
+    make -C "$work" -j"$INNER_JOBS" static libcryptopp.so CXX="$cxx" CXXFLAGS="-DNDEBUG -O2 -fPIC $LINUX_CXX_HARDENING" LDFLAGS="${LDFLAGS:-} $LINUX_LD_HARDENING"
   fi
 
   cp "$work/libcryptopp.a" "$outlib"
@@ -205,6 +223,12 @@ build_liboqs() {
     -DOQS_USE_OPENSSL=OFF
     "-DOQS_MINIMAL_BUILD=KEM_ml_kem_512;KEM_ml_kem_768;KEM_ml_kem_1024;SIG_ml_dsa_44;SIG_ml_dsa_65;SIG_ml_dsa_87"
   )
+  if [[ "$PLATFORM" == "linux" ]]; then
+    cmake_args+=("-DCMAKE_C_COMPILER=${CC:-gcc}" "-DCMAKE_CXX_COMPILER=g++"
+      "-DCMAKE_C_FLAGS=${CFLAGS:-} $LINUX_C_HARDENING"
+      "-DCMAKE_CXX_FLAGS=${CXXFLAGS:-} $LINUX_CXX_HARDENING"
+      "-DCMAKE_SHARED_LINKER_FLAGS=${LDFLAGS:-} $LINUX_LD_HARDENING")
+  fi
   if [[ -n "$sccache_prefix" ]]; then
     cmake_args+=(-DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache)
   fi
@@ -240,7 +264,8 @@ build_liboqs() {
   rm -rf "$work_static" "$work_shared" "$stage_static" "$stage_shared"
 }
 
-build_rabe() {
+build_rabe() (
+  linux_rust_hardening
   local upstream lock header rustc_info fingerprint work outlib
   upstream="$(hash_file vendor/librabe-ffi/UPSTREAM.md)"
   lock="$(hash_file vendor/librabe-ffi/Cargo.lock)"
@@ -277,9 +302,10 @@ build_rabe() {
 
   write_fingerprint rabe "$fingerprint"
   rm -rf "$work"
-}
+)
 
-build_covercrypt() {
+build_covercrypt() (
+  linux_rust_hardening
   local digest fingerprint work outlib shared_name outshared
   digest="$( { find vendor/cover_crypt/src bindings/covercrypt/src -type f; printf '%s\n' vendor/cover_crypt/Cargo.toml vendor/cover_crypt/Cargo.lock vendor/cover_crypt/UPSTREAM.md bindings/covercrypt/Cargo.toml bindings/covercrypt/Cargo.lock bindings/covercrypt/include/covercrypt_ffi.h; } | LC_ALL=C sort | while IFS= read -r input; do hash_file "$input"; done )"
   fingerprint="$(native_fingerprint covercrypt "covercrypt|$BUILD_VERSION|$PLATFORM|$(rustc -vV)|$digest|curve25519|mlkem-768")"
@@ -304,13 +330,13 @@ build_covercrypt() {
   cp "$work/release/$shared_name" "$outshared"
   cp bindings/covercrypt/include/covercrypt_ffi.h "$INCLUDE_DIR/covercrypt/"
   write_fingerprint covercrypt "$fingerprint"
-}
+)
 
 test_covercrypt() {
   CARGO_TARGET_DIR="$ROOT/build/artifacts/$PLATFORM/covercrypt-rust-tests" cargo test --locked --release --jobs "$INNER_JOBS" --manifest-path vendor/cover_crypt/Cargo.toml --lib --no-default-features --features curve25519,mlkem-768
 }
 
-build_tkn20() {
+build_tkn20() (
   local upstream gomod gosum bridge gover cc ccver fingerprint work outlib
   upstream="$(hash_file vendor/circl/UPSTREAM.md)"
   gomod="$(hash_file bindings/tkn20/go.mod)"
@@ -319,6 +345,13 @@ build_tkn20() {
   gover="$(go version)"
   cc="${CC:-cc}"
   ccver="$($cc --version | head -n 1)"
+  if [[ "$PLATFORM" == "linux" ]]; then
+    local cgo_hardening
+    cgo_hardening="$(python3 scripts/linux-hardening.py --compiler "$cc" --language c --format flags)"
+    export CGO_CFLAGS="${CGO_CFLAGS:--O2 -g} $cgo_hardening"
+    export CGO_CXXFLAGS="${CGO_CXXFLAGS:--O2 -g} $LINUX_CXX_HARDENING"
+    export CGO_LDFLAGS="${CGO_LDFLAGS:-} $LINUX_LD_HARDENING"
+  fi
   fingerprint="$(native_fingerprint tkn20 "tkn20|$BUILD_VERSION|$PLATFORM|$upstream|$gomod|$gosum|$bridge|$gover|$ccver")"
   outlib="$LIB_DIR/tkn20/libcpabe_tkn20.a"
 
@@ -357,7 +390,7 @@ build_tkn20() {
 
   write_fingerprint tkn20 "$fingerprint"
   rm -rf "$work"
-}
+)
 
 print_outputs() {
   echo

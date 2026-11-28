@@ -69,6 +69,21 @@ version is fixed at build time, so deployed binaries do not read either version
 file or the environment variable at runtime. This option selects the compiled
 version only; release packaging continues to use the official `VERSION` file.
 
+Linux native builds probe stack protector, stack-clash protection, glibc FORTIFY
+and PIE/linker support before compiling. FORTIFY uses level 3 when the selected
+compiler/libc support it, then level 2; the probe emits the actual flags in the
+dependency build log. Core libraries retain PIC, while the CLI uses PIE. ELF
+shared libraries and the CLI use a non-executable stack and full RELRO/NOW.
+The core export map preserves the declared C and C++ APIs. CET is not enabled.
+
+Windows native builds enable GS and CFG with explicit ASLR/NX/high-entropy
+linker flags. SDL applies to C/C++ builds except `covercrypt.cpp`, whose existing
+`getenv` calls fail under MSVC SDL (C4996); no diagnostic is globally suppressed.
+Rust MSVC dependencies enable CFG; the Go/MinGW TKN20 DLL uses its own GNU PE
+linker flags and is not claimed to have CFG. CET is not enabled. Full ABI,
+wheel and runtime regression validation is performed separately from these
+build settings.
+
 ### 2. Configure for your machine
 
 The single `configure` file checks the host toolchain without installing or

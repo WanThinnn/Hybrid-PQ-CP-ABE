@@ -49,7 +49,10 @@ def tree(path, source=False):
         dirs[:] = sorted(d for d in dirs if not source or d not in EXCLUDED)
         for name in sorted(files):
             item = Path(directory) / name
-            if source and (item.suffix in OUTPUT_SUFFIXES or name in {'.git', 'CMakeCache.txt'}):
+            # Crypto++ MSBuild appends to this generated marker in the vendor
+            # directory even with OutDir/IntDir redirected. It is not source.
+            if source and (item.suffix in OUTPUT_SUFFIXES or
+                           name in {'.git', 'CMakeCache.txt', 'adhoc.cpp.copied'}):
                 continue
             if not source and name.startswith('.'):
                 continue
@@ -94,6 +97,7 @@ def fingerprint(args):
     for name in SOURCES[args.name] + [
             'scripts/build-deps.sh', 'scripts/build-deps.ps1',
             'scripts/native-dependency-cache.py', 'scripts/cryptopp-msvc.props',
+            'scripts/linux-hardening.py',
             'scripts/cryptopp-dll.props', 'scripts/normalize-msvc-library.ps1',
             'vendor/upstreams.json']:
         paths.update(tree(ROOT / name, source=True))

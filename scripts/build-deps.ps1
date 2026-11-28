@@ -236,6 +236,9 @@ function Build-LibOqs {
         "-G", $Generator,
         "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
         "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL",
+        "-DCMAKE_C_FLAGS=/GS /sdl /guard:cf",
+        "-DCMAKE_CXX_FLAGS=/GS /sdl /guard:cf",
+        "-DCMAKE_SHARED_LINKER_FLAGS=/DYNAMICBASE /HIGHENTROPYVA /NXCOMPAT /GUARD:CF",
         "-DOQS_BUILD_ONLY_LIB=ON",
         "-DOQS_USE_OPENSSL=OFF",
         "-DOQS_MINIMAL_BUILD=KEM_ml_kem_512;KEM_ml_kem_768;KEM_ml_kem_1024;SIG_ml_dsa_44;SIG_ml_dsa_65;SIG_ml_dsa_87"
@@ -570,6 +573,22 @@ function Build-All {
 
     Write-ReadyMarker
     Show-Outputs
+}
+
+# Workers configure only their own toolchain, before computing fingerprints.
+# Go/MinGW never receives MSVC flags. Preserve Cargo's encoded flag precedence.
+if ($Dependency -in @('rabe', 'covercrypt', 'covercrypt-test')) {
+    [string[]]$RustFlags = if ($null -ne $env:CARGO_ENCODED_RUSTFLAGS) {
+        @($env:CARGO_ENCODED_RUSTFLAGS -split [char]31 | Where-Object { $_ })
+    } else {
+        @($env:RUSTFLAGS -split '\s+' | Where-Object { $_ })
+    }
+    $RustFlags += @('-Ccontrol-flow-guard=yes', '-Clink-arg=/DYNAMICBASE',
+        '-Clink-arg=/HIGHENTROPYVA', '-Clink-arg=/NXCOMPAT', '-Clink-arg=/GUARD:CF')
+    $env:CARGO_ENCODED_RUSTFLAGS = $RustFlags -join [char]31
+}
+if ($Dependency -eq 'tkn20') {
+    $env:CGO_LDFLAGS = ($env:CGO_LDFLAGS + ' -Wl,--dynamicbase -Wl,--high-entropy-va -Wl,--nxcompat').Trim()
 }
 
 switch ($Dependency) {

@@ -19,6 +19,7 @@ class VersionHeaderTests(unittest.TestCase):
             (root / 'scripts').mkdir()
             shutil.copy2(ROOT / 'scripts/windows-shell.sh', root / 'scripts/windows-shell.sh')
             shutil.copy2(ROOT / 'scripts/generate-version-header.py', root / 'scripts/generate-version-header.py')
+            shutil.copy2(ROOT / 'scripts/linux-hardening.py', root / 'scripts/linux-hardening.py')
             header = root / 'include/hybrid_pq_cp_abe/version.h'
             header.parent.mkdir(parents=True)
             for version in ('6.0.0', '6.1.2-test'):
@@ -37,6 +38,7 @@ class VersionHeaderTests(unittest.TestCase):
             for name in ('Makefile', 'Makefile.wasm', 'scripts/windows-shell.sh',
                          'scripts/generate-version-header.py'):
                 shutil.copy2(ROOT / name, root / name)
+            shutil.copy2(ROOT / 'scripts/linux-hardening.py', root / 'scripts/linux-hardening.py')
             (root / 'VERSION').write_text('6.1.0\n')
             (root / 'VERSION-DEV').write_text('6.2.0-alpha\n')
             # Selecting a file older than the generated header must still work.

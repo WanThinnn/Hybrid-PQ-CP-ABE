@@ -122,7 +122,7 @@ endif
 ifeq ($(COMPILER),msvc)
     CXX_BASE = cl.exe
     CXX = $(CXX_WRAPPER) $(CXX_BASE)
-    CXXFLAGS = /nologo /MD /GS /O2 /Z7 /EHsc /utf-8 /std:$(CXX_STANDARD) /I$(INC_DIR) /I$(DEPS_INC_DIR) /I$(OQS_INC_DIR) /I$(TKN20_INC_DIR)
+    CXXFLAGS = /nologo /MD /GS /sdl /guard:cf /O2 /Z7 /EHsc /utf-8 /std:$(CXX_STANDARD) /I$(INC_DIR) /I$(DEPS_INC_DIR) /I$(OQS_INC_DIR) /I$(TKN20_INC_DIR)
     DLL_DEFINE = /DBUILD_DLL
 
     STATIC_OBJ_DIR = $(OBJ_DIR)/static
@@ -148,7 +148,7 @@ ifeq ($(COMPILER),msvc)
     PUBLISHED_TKN20_DLL = $(LIB_DIR)/libcpabe_tkn20.dll
     WIN_LINK_DEPS = $(WIN_STATIC_DEPS) $(TKN20_IMPORT_LIB)
     WIN_SYSTEM_LIBS = bcrypt.lib advapi32.lib ntdll.lib userenv.lib ws2_32.lib
-    LDFLAGS = /link /ignore:4099 /MACHINE:X64
+    LDFLAGS = /link /ignore:4099 /MACHINE:X64 /DYNAMICBASE /HIGHENTROPYVA /NXCOMPAT /GUARD:CF
 else
     ifeq ($(PLATFORM),macos)
         CXX_BASE = clang++
@@ -159,14 +159,26 @@ else
         CXX_BASE = g++
         # TKN20's static archive embeds a Go runtime. Keep archive symbols
         # private so a Go/CGO consumer (Vault) cannot interpose its own runtime.
-        SHARED_FLAG = -DBUILD_DLL -shared -Wl,--exclude-libs,ALL
+        LINUX_EXPORT_MAP = $(BUILD_DIR)/exports.map
+        SHARED_FLAG = -DBUILD_DLL -shared -Wl,--exclude-libs,ALL -Wl,--version-script,$(LINUX_EXPORT_MAP)
         SHARED_LIB = $(BUILD_DIR)/libhybrid-pq-cp-abe.so
         # Keep the stack non-executable even when an archive member lacks .note.GNU-stack.
-        LDFLAGS = -lpthread -ldl -lm -Wl,-z,noexecstack
+        LDFLAGS = -lpthread -ldl -lm -Wl,-z,noexecstack -Wl,-z,relro -Wl,-z,now
     endif
 
     CXX = $(CXX_WRAPPER) $(CXX_BASE)
     CXXFLAGS = -O2 -g -Wall -std=$(CXX_STANDARD) -I$(INC_DIR) -I$(DEPS_INC_DIR) -I$(OQS_INC_DIR) -I$(TKN20_INC_DIR) -fPIC -MMD -MP
+    ifeq ($(PLATFORM),linux)
+        LINUX_CXX_HARDENING := $(shell python3 scripts/linux-hardening.py --compiler "$(CXX_BASE)" --language c++ --format flags)
+        ifeq ($(strip $(LINUX_CXX_HARDENING)),)
+            $(error Linux hardening compiler probe failed)
+        endif
+        # Public C++ adapters are declared without visibility annotations.
+        # Preserve those declarations; the linker map controls shared exports.
+        CXXFLAGS += $(LINUX_CXX_HARDENING)
+        CLI_CXXFLAGS = -fPIE
+        CLI_LDFLAGS = -pie
+    endif
 
     CORE_OBJ_DIR = $(OBJ_DIR)/core
     MAIN_OBJ_DIR = $(OBJ_DIR)/main
@@ -331,6 +343,11 @@ endif
 
 ifeq ($(COMPILER),msvc)
 
+# /sdl promotes the existing getenv calls in covercrypt.cpp to C4996 errors.
+# Keep GS/CFG here and do not suppress C4996 globally. Source remediation and
+# enabling SDL for this translation unit are tracked in security-phase-3.md.
+$(STATIC_OBJ_DIR)/covercrypt.obj $(SHARED_OBJ_DIR)/covercrypt.obj: private CXXFLAGS := $(filter-out /sdl,$(CXXFLAGS))
+
 $(COVERCRYPT_TEST): $(COVERCRYPT_TEST_SRC) $(PROJECT_HEADERS) $(STATIC_LIB) $(COVERCRYPT_HEADER) $(TKN20_IMPORT_LIB) $(TKN20_DLL) | $(BUILD_DIR) $(MAIN_OBJ_DIR)
 	$(CXX) $(CXXFLAGS) /Fo"$(subst /,\,$(MAIN_OBJ_DIR))\\" /Fe:"$(subst /,\,$@)" $(COVERCRYPT_TEST_SRC) $(LDFLAGS) "$(subst /,\,$(STATIC_LIB))" "$(subst /,\,$(TKN20_IMPORT_LIB))" $(WIN_SYSTEM_LIBS)
 	@copy /Y "$(subst /,\,$(TKN20_DLL))" "$(subst /,\,$(BUILD_DIR))\" >nul
@@ -428,7 +445,7 @@ $(CORE_OBJ_DIR)/%.o: %.cpp $(COMMON_HEADERS) Makefile $(DEPS_READY)
 
 $(MAIN_OBJ): $(MAIN_SRC) $(COMMON_HEADERS) Makefile $(DEPS_READY)
 	@mkdir -p $(MAIN_OBJ_DIR)
-	$(CXX) $(CXXFLAGS) -c "$(MAIN_SRC)" -o "$@"
+	$(CXX) $(CXXFLAGS) $(CLI_CXXFLAGS) -c "$(MAIN_SRC)" -o "$@"
 
 static: $(STATIC_LIB)
 
@@ -462,7 +479,12 @@ endif
 
 shared: $(SHARED_LIB)
 
-$(SHARED_LIB): $(OBJS) $(STATIC_LIBS_GCC) Makefile
+ifeq ($(PLATFORM),linux)
+$(LINUX_EXPORT_MAP): $(INC_DIR)/hybrid_pq_cp_abe/hybrid-pq-cp-abe.h $(INC_DIR)/hybrid_pq_cp_abe/cpabe-scheme.h $(INC_DIR)/hybrid_pq_cp_abe/common-utils.h scripts/native-exports.py
+	@python3 scripts/native-exports.py "$<" "$@"
+endif
+
+$(SHARED_LIB): $(OBJS) $(STATIC_LIBS_GCC) Makefile $(LINUX_EXPORT_MAP)
 	@mkdir -p $(BUILD_DIR)
 	$(CXX) $(SHARED_FLAG) $(OBJS) -o $(SHARED_LIB) $(STATIC_LIBS_GCC) $(LDFLAGS)
 	@mkdir -p $(LIB_DIR)
@@ -494,7 +516,7 @@ endif
 
 $(EXEC): $(MAIN_OBJ) $(STATIC_LIB) $(STATIC_LIBS_GCC) Makefile
 	@mkdir -p $(BUILD_DIR)
-	$(CXX) $(MAIN_OBJ) -o $(EXEC) $(STATIC_LIB) $(STATIC_LIBS_GCC) $(LDFLAGS)
+	$(CXX) $(MAIN_OBJ) -o $(EXEC) $(STATIC_LIB) $(STATIC_LIBS_GCC) $(LDFLAGS) $(CLI_LDFLAGS)
 	@echo Done! Executable: $(EXEC)
 
 clean:

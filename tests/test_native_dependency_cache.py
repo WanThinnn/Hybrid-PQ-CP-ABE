@@ -108,6 +108,7 @@ class NativeDependencyCacheTests(unittest.TestCase):
         source = self.write('vendor/librabe-ffi/src/lib.rs')
         self.write('vendor/upstreams.json')
         for name in ['build-deps.sh', 'build-deps.ps1', 'native-dependency-cache.py',
+                     'linux-hardening.py',
                      'cryptopp-msvc.props', 'cryptopp-dll.props', 'normalize-msvc-library.ps1']:
             self.write('scripts/' + name)
         identity = ['compiler-v1']
@@ -123,6 +124,8 @@ class NativeDependencyCacheTests(unittest.TestCase):
                 patch.object(cache.subprocess, 'check_output', return_value=go_env), \
                 patch.dict(os.environ, {}, clear=True):
             original = fingerprint()
+            self.assertEqual(original, fingerprint())
+            self.write('vendor/librabe-ffi/adhoc.cpp.copied', b'generated marker')
             self.assertEqual(original, fingerprint())
             old_stat = source.stat()
             source.write_bytes(b'xyz')
