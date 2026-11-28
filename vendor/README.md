@@ -37,6 +37,32 @@ layout Git discovers the **main** repository. Use the helper instead.
 
 ## Update workflow
 
+### PQC PDF signing fork (`pqc-underskrift`)
+
+`vendor/pqc-underskrift/` tracks the maintainer fork at
+`https://github.com/WanThinnn/pqc-underskrift.git`, **not** the original
+`kushaldas/underskrift` repository. It follows the same ordinary-source,
+private-Git-database workflow as the other vendors; no Git submodule is used.
+If the source was cloned directly into `vendor/` and still has its own `.git`
+directory, adopt it **once** before initializing. This moves the existing Git
+metadata (without deleting it) to `.git/vendors/pqc-underskrift.original.git`
+and leaves all working files unchanged:
+
+```sh
+python scripts/vendor.py adopt pqc-underskrift
+```
+
+```sh
+python scripts/vendor.py init pqc-underskrift    # once per maintainer machine
+python scripts/vendor.py status pqc-underskrift
+python scripts/vendor.py pull pqc-underskrift    # fetch/merge the fork's default branch
+```
+
+`pull` updates the vendored source locally and records the new pinned commit;
+it does not push to either repository. Review and commit the resulting files
+in the main project. Updates to the original `kushaldas/underskrift` must first
+be brought into the fork separately.
+
 To pull the default upstream branch automatically for every initialized vendor:
 
 ```sh
@@ -94,5 +120,5 @@ For controlled updates to a particular release, use the explicit workflow below.
    that main-repository commit using your normal workflow. The private
    `.git/vendors/` databases are local maintenance state, not files to add.
 
-The helper never pushes to the five upstream repositories. Other contributors
+The helper never pushes to the registered upstream repositories. Other contributors
 and CI do not need to initialize these databases.

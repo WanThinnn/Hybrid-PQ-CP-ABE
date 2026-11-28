@@ -30,7 +30,7 @@ class VendorGit:
             raise RuntimeError(result.stderr.strip() or result.stdout.strip() or f'Git exited {result.returncode}')
         return result
 
-    def paths(self, name):
+    def paths(self, name, *, allow_embedded_git=False):
         if name not in self.sources or not re.fullmatch(r'[A-Za-z0-9_.-]+', name):
             raise ValueError(f'Unknown vendor: {name}')
         work = self.root / 'vendor' / name
@@ -38,10 +38,27 @@ class VendorGit:
             raise ValueError('Vendor worktree must be directly inside vendor/')
         if not work.is_dir():
             raise ValueError(f'Missing vendored source: {work}')
-        if (work / '.git').exists():
+        if (work / '.git').exists() and not allow_embedded_git:
             raise ValueError(f'{work}/.git already exists; refusing to replace embedded Git metadata')
         database = self.git_dir / 'vendors' / (name + '.git')
         return work, database
+
+    def adopt(self, name):
+        """Preserve an existing clone's Git history outside the vendored tree."""
+        work, database = self.paths(name, allow_embedded_git=True)
+        embedded = work / '.git'
+        backup = self.git_dir / 'vendors' / (name + '.original.git')
+        if embedded.is_symlink() or not embedded.is_dir():
+            raise ValueError(f'{name}: expected a real .git directory from an existing clone')
+        if database.exists() or backup.exists():
+            raise RuntimeError(f'{name}: private vendor metadata already exists; refusing to overwrite')
+        toplevel = self.run(['git', '-C', str(work), 'rev-parse', '--show-toplevel'], self.root).stdout.strip()
+        if Path(toplevel).resolve() != work.resolve():
+            raise RuntimeError(f'{name}: embedded .git is not the vendor repository')
+        backup.parent.mkdir(parents=True, exist_ok=True)
+        embedded.rename(backup)
+        print(f'{name}: original Git metadata preserved at {backup}; source files unchanged')
+        print(f'{name}: now run python scripts/vendor.py init {name}')
 
     def git(self, name, *arguments, check=True):
         work, database = self.paths(name)
@@ -157,6 +174,8 @@ def main():
     for command in ('init', 'status', 'pull'):
         sub = commands.add_parser(command)
         sub.add_argument('name', nargs='?', default='all')
+    adopt = commands.add_parser('adopt', help='Preserve an existing clone before vendor initialization')
+    adopt.add_argument('name')
     snapshot = commands.add_parser('snapshot')
     snapshot.add_argument('name')
     snapshot.add_argument('-m', '--message', required=True)
@@ -170,7 +189,9 @@ def main():
     vendors = VendorGit()
     names = list(vendors.sources) if getattr(args, 'name', None) == 'all' else [args.name]
     for name in names:
-        if args.command == 'init':
+        if args.command == 'adopt':
+            vendors.adopt(name)
+        elif args.command == 'init':
             vendors.init(name)
         elif args.command == 'status':
             vendors.ready(name)

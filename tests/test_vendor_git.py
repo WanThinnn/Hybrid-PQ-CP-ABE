@@ -65,6 +65,41 @@ class VendorGitTests(unittest.TestCase):
             self.assertEqual(manager.git('example', 'status', '--porcelain').stdout, '')
             self.assertEqual(json.loads(manager.manifest.read_text())['example']['commit'], revision)
 
+    def test_adopt_embedded_clone_preserves_history_and_source(self):
+        with tempfile.TemporaryDirectory(prefix='vendor embedded clone ') as directory:
+            directory = Path(directory)
+            upstream, root = directory / 'upstream', directory / 'project'
+            self.repository(upstream)
+            (upstream / 'library.rs').write_text('upstream source\n')
+            self.git(upstream, 'add', '.')
+            self.git(upstream, 'commit', '-qm', 'base')
+            revision = self.git(upstream, 'rev-parse', 'HEAD')
+            self.repository(root)
+            (root / 'vendor').mkdir()
+            work = root / 'vendor/example'
+            self.git(root, 'clone', str(upstream), str(work))
+            (work / 'UPSTREAM.md').write_text(f'- Vendored commit: {revision}\n')
+            (root / 'vendor/upstreams.json').write_text(
+                json.dumps({'example': {'url': upstream.as_uri(), 'commit': revision}}))
+            manager = VENDOR.VendorGit(root)
+            with self.assertRaisesRegex(ValueError, 'embedded Git metadata'):
+                manager.init('example')
+            manager.adopt('example')
+            backup = root / '.git/vendors/example.original.git'
+            self.assertTrue(backup.is_dir())
+            self.assertFalse((work / '.git').exists())
+            self.assertEqual((work / 'library.rs').read_text(), 'upstream source\n')
+            self.assertEqual(
+                self.git(root, '--git-dir=' + str(backup), 'rev-parse', 'HEAD'),
+                revision)
+            self.git(root, 'add', '.')
+            self.git(root, 'commit', '-qm', 'ordinary vendored source')
+            manager.init('example')
+            self.assertEqual(
+                manager.git('example', 'rev-parse', 'refs/remotes/upstream/pinned').stdout.strip(),
+                revision)
+            self.assertEqual(self.git(root, 'status', '--porcelain'), '')
+
     def test_dirty_vendor_blocks_update_before_fetch(self):
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)

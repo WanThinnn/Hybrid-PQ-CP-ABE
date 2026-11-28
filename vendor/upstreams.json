@@ -18,5 +18,9 @@
   "cryptopp": {
     "url": "https://github.com/weidai11/cryptopp.git",
     "commit": "5873a73a231c95771f5bbf3466a484952fb22780"
+  },
+  "pqc-underskrift": {
+    "url": "https://github.com/WanThinnn/pqc-underskrift.git",
+    "commit": "3a953ef41043c41c653b7194a155f4c226c4f370"
   }
 }
