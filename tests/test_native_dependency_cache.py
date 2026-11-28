@@ -82,7 +82,16 @@ class NativeDependencyCacheTests(unittest.TestCase):
             self.invoke('ready', name='all')
         self.assertFalse(ready.exists())
 
-    def test_ready_requires_all_five_dependencies_and_keeps_timestamp(self):
+    def test_pqc_underskrift_uses_archive_only_and_detects_tampering(self):
+        # The Rust PDF crate has no public C headers until the FFI is added.
+        archive = self.write('build/deps/linux/lib/pqc-underskrift/libunderskrift.a')
+        self.invoke('record', name='pqc-underskrift')
+        self.invoke('check', name='pqc-underskrift')
+        archive.write_bytes(b'modified archive')
+        with self.assertRaises(SystemExit):
+            self.invoke('check', name='pqc-underskrift')
+
+    def test_ready_requires_all_six_dependencies_and_keeps_timestamp(self):
         libraries = {'cryptopp': 'libcryptopp', 'liboqs': 'liboqs',
                      'rabe': 'librabe_ffi', 'tkn20': 'libcpabe_tkn20',
                      'covercrypt': 'libcovercrypt_ffi'}
@@ -93,12 +102,14 @@ class NativeDependencyCacheTests(unittest.TestCase):
                 self.write(f'build/deps/linux/lib/{name}/{library}.{extension}')
             self.write(f'build/deps/linux/include/{name}/{headers[name]}')
             self.invoke('record', name=name)
+        self.write('build/deps/linux/lib/pqc-underskrift/libunderskrift.a')
+        self.invoke('record', name='pqc-underskrift')
         self.invoke('ready', name='all')
         ready = self.base / 'lib/.ready'
         before = ready.stat().st_mtime_ns
         self.invoke('ready', name='all')
         self.assertEqual(before, ready.stat().st_mtime_ns)
-        self.assertEqual(len(json.loads(ready.read_text())['dependencies']), 5)
+        self.assertEqual(len(json.loads(ready.read_text())['dependencies']), 6)
         (self.base / 'lib/tkn20/libcpabe_tkn20.so').unlink()
         with self.assertRaises(FileNotFoundError):
             self.invoke('ready', name='all')
@@ -122,7 +133,7 @@ class NativeDependencyCacheTests(unittest.TestCase):
 
         with patch.object(cache, 'tool', side_effect=lambda command: [command, *identity]), \
                 patch.object(cache.subprocess, 'check_output', return_value=go_env), \
-                patch.dict(os.environ, {}, clear=True):
+                patch.dict(os.environ, {'CARGO_HOME': str(self.root / '.cargo')}, clear=True):
             original = fingerprint()
             self.assertEqual(original, fingerprint())
             self.write('vendor/librabe-ffi/adhoc.cpp.copied', b'generated marker')

@@ -28,12 +28,16 @@ LINKFLAGS := -sMODULARIZE=1 -sEXPORT_ES6=1 -sEXPORT_NAME=createHybridCPABE -sENV
  -sEXPORTED_RUNTIME_METHODS='["ccall","cwrap","FS","ENV","callMain","UTF8ToString","HEAPU8","HEAPU32"]' \
  -sEXPORTED_FUNCTIONS=@$(BUILD_DIR)/exports.json -sINVOKE_RUN=0
 
-.PHONY: all deps static shared executable test clean clean-deps help publish
+.PHONY: all deps pdf-deps static shared executable test clean clean-deps help publish
 all: static shared
 	@echo 'WASM build complete: $(BUILD_DIR)'
 	@echo 'Published archive and JS/WASM runtime: $(LIB_DIR)'
 deps:
 	@bash scripts/build-wasm-deps.sh $(JOBS)
+# Build and cache the standalone Rust PDF/CMS archive without linking it
+# into the WASM SDK. Enable linking only after the C ABI bridge is implemented.
+pdf-deps:
+	@bash scripts/build-wasm-deps.sh $(JOBS) pdf
 $(READY):
 	@bash scripts/build-wasm-deps.sh $(JOBS)
 
@@ -82,8 +86,9 @@ clean:
 clean-deps:
 	rm -rf $(DEPS_DIR)
 help:
-	@echo 'make -f Makefile.wasm -j8 [all|deps|static|shared|executable|test|clean|clean-deps]'
+	@echo 'make -f Makefile.wasm -j8 [all|deps|pdf-deps|static|shared|executable|test|clean|clean-deps]'
 	@echo 'Run configure --wasm on Linux/WSL, macOS, or Windows MSYS2 to check the toolchain.'
 	@echo 'JOBS=8 controls dependency compiler jobs. Artifacts: $(BUILD_DIR). SDK: $(LIB_DIR).'
+	@echo 'pdf-deps stages libunderskrift.a separately; no PDF C ABI or WASM exports yet.'
 
 -include $(OBJS:.o=.d) $(BUILD_DIR)/obj/src/main.d

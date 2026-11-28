@@ -17,7 +17,7 @@ if [[ -z "$PLATFORM" ]]; then
 fi
 
 case "$DEPENDENCY" in
-  all|cryptopp|liboqs|rabe|tkn20|covercrypt|covercrypt-test) ;;
+  all|cryptopp|liboqs|rabe|tkn20|covercrypt|covercrypt-test|pqc-underskrift) ;;
   *) echo "Unknown dependency: $DEPENDENCY" >&2; exit 2 ;;
 esac
 
@@ -52,6 +52,7 @@ unset MAKEFLAGS MFLAGS MAKELEVEL
 INNER_JOBS="$TOTAL_JOBS"
 
 required=(cmake make cargo rustc go python3)
+if [[ "$DEPENDENCY" == "pqc-underskrift" ]]; then required=(cargo rustc python3); fi
 if [[ "$PLATFORM" == "macos" ]]; then
   required+=(clang++)
 else
@@ -332,6 +333,30 @@ build_covercrypt() (
   write_fingerprint covercrypt "$fingerprint"
 )
 
+build_pqc_underskrift() (
+  # Keep the PDF engine separate until a public C ABI bridge is implemented.
+  linux_rust_hardening
+  local rust_version fingerprint work outlib
+  rust_version="$(rustc -vV)"
+  fingerprint="$(native_fingerprint pqc-underskrift "pqc-underskrift|$BUILD_VERSION|$PLATFORM|$rust_version|release|staticlib|external-composite|no-default-features|lto=false|panic=unwind")"
+  outlib="$LIB_DIR/pqc-underskrift/libunderskrift.a"
+  if cache_matches pqc-underskrift "$fingerprint" "$outlib"; then
+    echo '==> pqc-underskrift: cached'
+    return
+  fi
+  echo "==> pqc-underskrift ($INNER_JOBS jobs, external-composite, standalone static archive)"
+  work="$WORK_DIR/pqc-underskrift-target"
+  rm -rf "$work" "$LIB_DIR/pqc-underskrift"
+  mkdir -p "$LIB_DIR/pqc-underskrift"
+  CARGO_TARGET_DIR="$work" CARGO_PROFILE_RELEASE_LTO=false CARGO_PROFILE_RELEASE_PANIC=unwind \
+    cargo rustc --locked --release --jobs "$INNER_JOBS" --manifest-path vendor/pqc-underskrift/Cargo.toml \
+      --lib --crate-type staticlib --no-default-features --features external-composite
+  test -f "$work/release/libunderskrift.a" || { echo 'pqc-underskrift archive not found' >&2; exit 1; }
+  cp "$work/release/libunderskrift.a" "$outlib"
+  write_fingerprint pqc-underskrift "$fingerprint"
+  rm -rf "$work"
+)
+
 test_covercrypt() {
   CARGO_TARGET_DIR="$ROOT/build/artifacts/$PLATFORM/covercrypt-rust-tests" cargo test --locked --release --jobs "$INNER_JOBS" --manifest-path vendor/cover_crypt/Cargo.toml --lib --no-default-features --features curve25519,mlkem-768
 }
@@ -400,7 +425,7 @@ print_outputs() {
   echo " Libraries: build/deps/$PLATFORM/lib/"
   echo "----------------------------------------------------------------"
   local dep
-  for dep in cryptopp liboqs rabe tkn20 covercrypt; do
+  for dep in cryptopp liboqs rabe tkn20 covercrypt pqc-underskrift; do
     echo " [$dep]"
     echo "   include: build/deps/$PLATFORM/include/$dep/"
     echo "   lib    : build/deps/$PLATFORM/lib/$dep/"
@@ -422,7 +447,7 @@ run_dep() {
 }
 
 run_all() {
-  local deps=(liboqs cryptopp rabe tkn20 covercrypt)
+  local deps=(liboqs cryptopp rabe tkn20 covercrypt pqc-underskrift)
   local count="${#deps[@]}"
   local status=0
   local pids=()
@@ -482,6 +507,7 @@ case "$DEPENDENCY" in
   rabe) build_rabe ;;
   tkn20) build_tkn20 ;;
   covercrypt) build_covercrypt ;;
+  pqc-underskrift) build_pqc_underskrift ;;
   covercrypt-test) test_covercrypt ;;
   all) run_all ;;
 esac

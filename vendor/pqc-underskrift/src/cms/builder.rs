@@ -23,6 +23,7 @@ use x509_cert::Certificate;
 
 use const_oid::ObjectIdentifier;
 
+use crate::composite::CompositeAlgorithm;
 use crate::crypto::algorithm::{DigestAlgorithm, SignatureAlgorithm};
 use crate::crypto::traits::CryptoSigner;
 use crate::error::CmsError;
@@ -261,6 +262,7 @@ pub struct PdfCmsBuilder<'a> {
     commitment_type: Option<CommitmentType>,
     /// Optional signature-policy-identifier signed attribute
     signature_policy: Option<SignaturePolicy>,
+    composite_algorithm: Option<CompositeAlgorithm>,
 }
 
 impl<'a> PdfCmsBuilder<'a> {
@@ -274,7 +276,15 @@ impl<'a> PdfCmsBuilder<'a> {
             signing_time_placement: SigningTimePlacement::default(),
             commitment_type: None,
             signature_policy: None,
+            composite_algorithm: None,
         }
+    }
+
+    /// Use an external Composite ML-DSA signer with RFC 10082 CMS identifiers.
+    /// No signing key or traditional signature backend is needed in Rust.
+    pub fn composite_algorithm(mut self, algorithm: CompositeAlgorithm) -> Self {
+        self.composite_algorithm = Some(algorithm);
+        self
     }
 
     /// Include a `commitment-type-indication` signed attribute identifying what
@@ -338,9 +348,13 @@ impl<'a> PdfCmsBuilder<'a> {
         };
 
         // Signature value: RSA up to 512 bytes (4096-bit), ECDSA up to 144 bytes
-        let sig_size = match self.signer.signature_algorithm() {
-            SignatureAlgorithm::RsaPkcs1v15 | SignatureAlgorithm::RsaPss => 512,
-            _ => 144,
+        let sig_size = if let Some(alg) = self.composite_algorithm {
+            alg.mldsa_signature_len() + 128
+        } else {
+            match self.signer.signature_algorithm() {
+                SignatureAlgorithm::RsaPkcs1v15 | SignatureAlgorithm::RsaPss => 512,
+                _ => 144,
+            }
         };
 
         // Signed attributes: ~256 bytes, ASN.1 overhead: ~512 bytes
@@ -355,6 +369,11 @@ impl<'a> PdfCmsBuilder<'a> {
     ///
     /// Returns the DER-encoded `ContentInfo` wrapping the `SignedData`.
     pub fn build(&self, data_hash: &[u8]) -> Result<Vec<u8>, CmsError> {
+        if self.composite_algorithm.is_some() {
+            return Err(CmsError::UnsupportedAlgorithm(
+                "Composite ML-DSA requires external pre_sign()/complete_cms()".into(),
+            ));
+        }
         // 1. Parse the signer's certificate to extract issuer + serial
         let cert_der = self.signer.certificate_der();
         let cert = Certificate::from_der(cert_der)
@@ -389,7 +408,10 @@ impl<'a> PdfCmsBuilder<'a> {
         //    Per RFC 5652 §5.4: encode the signed attributes as a SET OF,
         //    then hash and sign that encoding.
         let attrs_to_sign = self.encode_attrs_for_signing(&signed_attrs)?;
-        let attrs_hash = self.signer.digest_algorithm().digest(&attrs_to_sign);
+        let attrs_hash = match self.composite_algorithm {
+            Some(alg) => alg.digest(&attrs_to_sign),
+            None => self.signer.digest_algorithm().digest(&attrs_to_sign),
+        };
         let signature_bytes = self
             .signer
             .sign_hash(&attrs_hash)
@@ -505,7 +527,10 @@ impl<'a> PdfCmsBuilder<'a> {
 
         // 7. DER-encode signed attributes and compute the hash-to-sign
         let attrs_to_sign = self.encode_attrs_for_signing(&signed_attrs)?;
-        let attrs_hash = self.signer.digest_algorithm().digest(&attrs_to_sign);
+        let attrs_hash = match self.composite_algorithm {
+            Some(alg) => alg.digest(&attrs_to_sign),
+            None => self.signer.digest_algorithm().digest(&attrs_to_sign),
+        };
 
         // 8. Build unsigned attributes (if any)
         let unsigned_attrs = self.build_unsigned_attributes()?;
@@ -708,7 +733,10 @@ impl<'a> PdfCmsBuilder<'a> {
         let cert_der = cert
             .to_der()
             .map_err(|e| CmsError::Der(format!("failed to DER-encode cert for hash: {e}")))?;
-        let cert_hash = self.signer.digest_algorithm().digest(&cert_der);
+        let cert_hash = match self.composite_algorithm {
+            Some(alg) => alg.digest(&cert_der),
+            None => self.signer.digest_algorithm().digest(&cert_der),
+        };
 
         // Build the ESSCertIDv2 manually as DER.
         // When the hash algorithm is SHA-256 (the default), the hashAlgorithm
@@ -775,6 +803,12 @@ impl<'a> PdfCmsBuilder<'a> {
 
     /// Get the AlgorithmIdentifier for the digest algorithm.
     fn digest_algorithm_identifier(&self) -> AlgorithmIdentifierOwned {
+        if let Some(alg) = self.composite_algorithm {
+            return AlgorithmIdentifierOwned {
+                oid: alg.digest_oid(),
+                parameters: None,
+            };
+        }
         let oid = match self.signer.digest_algorithm() {
             DigestAlgorithm::Sha256 => rfc5912::ID_SHA_256,
             DigestAlgorithm::Sha384 => rfc5912::ID_SHA_384,
@@ -791,6 +825,12 @@ impl<'a> PdfCmsBuilder<'a> {
 
     /// Get the AlgorithmIdentifier for the signature algorithm.
     fn signature_algorithm_identifier(&self) -> Result<AlgorithmIdentifierOwned, CmsError> {
+        if let Some(alg) = self.composite_algorithm {
+            return Ok(AlgorithmIdentifierOwned {
+                oid: alg.oid(),
+                parameters: None,
+            });
+        }
         use crate::crypto::algorithm::OID_RSASSA_PSS;
 
         let (oid, parameters) = match (
@@ -1236,7 +1276,7 @@ fn encode_integer(val: u32) -> Vec<u8> {
     out
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "software-signing"))]
 pub(crate) mod tests {
     use super::*;
 

@@ -1172,7 +1172,7 @@ fn get_root_object_id(doc: &Document) -> Option<u32> {
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
-#[cfg(test)]
+#[cfg(all(test, feature = "software-signing"))]
 mod tests {
     use super::*;
 

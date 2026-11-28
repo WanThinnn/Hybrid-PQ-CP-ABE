@@ -256,7 +256,7 @@ fn exactly_one<'a>(infos: &'a [&'a SignerInfo]) -> Result<&'a SignerInfo, CmsErr
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "software-signing"))]
 mod tests {
     use super::*;
     use crate::crypto::software::SoftwareSigner;

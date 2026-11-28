@@ -221,7 +221,7 @@ FORCE_VERSION:
 $(VERSION_HEADER): $(VERSION_FILE) scripts/generate-version-header.py FORCE_VERSION
 	@$(VERSION_PYTHON) scripts/generate-version-header.py "$(VERSION_FILE)" "$@"
 
-.PHONY: all clean deps clean-deps executable install shared static benchmark-bridge help test tests abi-info vault test-vault clean-vault
+.PHONY: all clean deps clean-deps pdf-deps executable install shared static benchmark-bridge help test tests abi-info vault test-vault clean-vault
 
 all: static shared executable
 	@echo "================================================================"
@@ -253,7 +253,8 @@ help:
 	@echo "             Hybrid CP-ABE Library Makefile"
 	@echo "================================================================"
 	@echo "  make -j8             Incremental parallel build"
-	@echo "  make deps -j8        Build/check 5 native dependencies in parallel"
+	@echo "  make deps -j8        Build/check 6 native dependencies in parallel"
+	@echo "  make pdf-deps        Build/check pqc-underskrift alone (external-composite)"
 	@echo "  make clean-deps      Remove dependency build cache"
 	@echo "  make static          Build only the static library"
 	@echo "  make shared          Build only the shared library"
@@ -269,6 +270,7 @@ help:
 	@echo "  make clean           Remove core build outputs only"
 	@echo "  make wasm -j8        Build WASM on Linux/WSL, macOS, or Windows MSYS2"
 	@echo "  make wasm-test -j8   Build WASM and run Node.js smoke tests"
+	@echo "  make wasm-pdf-deps   Stage experimental Rust PDF archive for WASM (not linked)"
 	@echo ""
 	@echo "sccache is used automatically when installed."
 	@echo "================================================================"
@@ -311,6 +313,17 @@ clean-deps:
 	@echo "Cleaning dependency cache: $(DEPS_DIR)"
 	@rm -rf $(DEPS_DIR)
 	@echo "Done! Dependency cache cleared."
+endif
+
+# Build only the standalone PDF/CMS archive; no core/C ABI linkage yet.
+ifeq ($(PLATFORM),windows)
+pdf-deps: SHELL = sh.exe
+pdf-deps: .SHELLFLAGS = -c
+pdf-deps:
+	@powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-deps.ps1 -Dependency pqc-underskrift
+else
+pdf-deps:
+	@bash scripts/build-deps.sh $(PLATFORM) pqc-underskrift
 endif
 
 ifeq ($(PLATFORM),linux)
@@ -541,15 +554,17 @@ test: $(EXEC) $(COVERCRYPT_TEST) $(PARAMS_TEST)
 
 endif
 
-.PHONY: wasm wasm-deps wasm-test clean-wasm
+.PHONY: wasm wasm-deps wasm-test clean-wasm wasm-pdf-deps
 ifeq ($(PLATFORM),windows)
-wasm wasm-deps wasm-test clean-wasm: SHELL := /bin/bash
-wasm wasm-deps wasm-test clean-wasm: .SHELLFLAGS := -c
+wasm wasm-deps wasm-test clean-wasm wasm-pdf-deps: SHELL := /bin/bash
+wasm wasm-deps wasm-test clean-wasm wasm-pdf-deps: .SHELLFLAGS := -c
 endif
 wasm:
 	$(MAKE) -f Makefile.wasm all
 wasm-deps:
 	$(MAKE) -f Makefile.wasm deps
+wasm-pdf-deps:
+	$(MAKE) -f Makefile.wasm pdf-deps
 wasm-test:
 	$(MAKE) -f Makefile.wasm test
 clean-wasm:

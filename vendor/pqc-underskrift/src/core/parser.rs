@@ -185,9 +185,13 @@ pub fn extract_signatures(doc: &Document) -> Result<Vec<ExistingSignature>, Core
         let contents = match sig_dict.get(b"Contents").and_then(Object::as_str) {
             Ok(bytes) => {
                 let mut data = bytes.to_vec();
-                // Trim trailing zeros (padding)
-                while data.last() == Some(&0) {
-                    data.pop();
+                // Prefer exact DER length: valid CMS may end in zero bytes.
+                if let Some(der_len) = cms_der_length(&data) {
+                    data.truncate(der_len);
+                } else {
+                    while data.last() == Some(&0) {
+                        data.pop();
+                    }
                 }
                 data
             }
@@ -210,6 +214,34 @@ pub fn extract_signatures(doc: &Document) -> Result<Vec<ExistingSignature>, Core
     }
 
     Ok(signatures)
+}
+
+/// Get the exact DER TLV length of the CMS ContentInfo. A signature can
+/// legitimately end in zero bytes; blindly trimming zero padding would corrupt it.
+fn cms_der_length(data: &[u8]) -> Option<usize> {
+    if data.first().copied()? != 0x30 {
+        return None;
+    }
+    let b = *data.get(1)?;
+    let (value_len, header_len) = if b < 0x80 {
+        (usize::from(b), 2usize)
+    } else {
+        let count = usize::from(b & 0x7f);
+        if count == 0 || count > std::mem::size_of::<usize>() || data.len() < 2 + count {
+            return None;
+        }
+        let mut size = 0usize;
+        for byte in &data[2..2 + count] {
+            size = size.checked_mul(256)?.checked_add(usize::from(*byte))?;
+        }
+        (size, 2 + count)
+    };
+    let total = header_len.checked_add(value_len)?;
+    if total <= data.len() && data[total..].iter().all(|&b| b == 0) {
+        Some(total)
+    } else {
+        None
+    }
 }
 
 /// Extract ByteRange array values from a signature dictionary.

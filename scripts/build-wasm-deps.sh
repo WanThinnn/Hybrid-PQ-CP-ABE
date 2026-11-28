@@ -11,6 +11,11 @@ case "$(uname -s)" in
   *) echo 'WASM builds require Linux/WSL, macOS, or Windows MSYS2.' >&2; exit 1 ;;
 esac
 JOBS="${1:-8}"
+MODE="${2:-all}"
+case "$MODE" in
+  all|pdf) ;;
+  *) echo "Unknown WASM dependency mode: $MODE" >&2; exit 2 ;;
+esac
 [[ "$JOBS" =~ ^[1-9][0-9]*$ ]] || { echo 'Invalid job count' >&2; exit 2; }
 unset MAKEFLAGS MFLAGS MAKELEVEL
 tools=(emcc em++ emar emranlib emcmake cmake make cargo rustc rustup go python3)
@@ -44,6 +49,40 @@ rustup component list --installed --toolchain "$rust_toolchain" | grep -q '^rust
 }
 WORK="$DEPS/.work"
 mkdir -p "$WORK" "$DEPS/include" "$DEPS/lib"
+if [[ "$MODE" == pdf ]]; then
+  # Optional until a C ABI wrapper is available. Do not link into WASM SDK yet.
+  pdf_digest="$(python3 scripts/wasm-source-digest.py "$WORK/pqc-underskrift-digests.json" \
+    vendor/pqc-underskrift/src vendor/pqc-underskrift/Cargo.toml vendor/pqc-underskrift/Cargo.lock)"
+  pdf_fingerprint="$({
+    printf '%s\n' "$pdf_digest"
+    emcc --version
+    cargo +"$rust_toolchain" --version
+    rustc +"$rust_toolchain" -vV
+    "${hash[@]}" scripts/build-wasm-deps.sh
+  } | "${hash[@]}" | cut -d' ' -f1)"
+  pdf_lib="$DEPS/lib/pqc-underskrift/libunderskrift.a"
+  pdf_ready="$DEPS/lib/pqc-underskrift/.ready"
+  if [[ -f "$pdf_lib" && -f "$pdf_ready" ]] && [[ "$(cat "$pdf_ready")" == "$pdf_fingerprint" ]]; then
+    echo 'WASM pqc-underskrift: cached'
+    exit 0
+  fi
+  echo '==> pqc-underskrift (WASM/Emscripten static archive, external-composite)'
+  mkdir -p "$DEPS/lib/pqc-underskrift"
+  target_dir="$WORK/pqc-underskrift-target"
+  if (( windows )); then target_dir="$(cygpath -am "$target_dir")"; fi
+  export CARGO_PROFILE_RELEASE_LTO=false CARGO_PROFILE_RELEASE_PANIC=abort
+  export RUSTFLAGS='-C panic=abort'
+  CARGO_TARGET_DIR="$target_dir" cargo +"$rust_toolchain" rustc -Zbuild-std=std,panic_abort \
+    --locked --release --jobs "$JOBS" --target wasm32-unknown-emscripten \
+    --manifest-path vendor/pqc-underskrift/Cargo.toml \
+    --lib --crate-type staticlib --no-default-features --features external-composite
+  test -f "$WORK/pqc-underskrift-target/wasm32-unknown-emscripten/release/libunderskrift.a"
+  cp "$WORK/pqc-underskrift-target/wasm32-unknown-emscripten/release/libunderskrift.a" "$pdf_lib"
+  printf '%s\n' "$pdf_fingerprint" > "$pdf_ready"
+  echo "WASM pqc-underskrift staged: $pdf_lib (not linked into SDK)"
+  exit 0
+fi
+
 echo '==> Checking WASM dependency cache (toolchains and sources)'
 source_digest="$(python3 scripts/wasm-source-digest.py "$WORK/source-digests.json" \
   vendor/cryptopp vendor/liboqs vendor/circl vendor/librabe-ffi/src \

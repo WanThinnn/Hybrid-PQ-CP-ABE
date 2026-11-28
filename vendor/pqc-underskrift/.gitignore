@@ -1,6 +1,6 @@
 # Build artifacts
 /target/
-Cargo.lock
+# Cargo.lock is versioned to keep vendored dependency builds reproducible.
 
 # Private keys and PKCS#12 bundles — NEVER commit these
 tests/fixtures/ca_key.pem

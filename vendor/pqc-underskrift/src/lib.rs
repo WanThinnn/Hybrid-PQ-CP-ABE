@@ -27,6 +27,7 @@
 
 // Modules — always compiled
 pub mod cms;
+pub mod composite;
 pub mod core;
 pub mod crypto;
 pub mod error;
@@ -34,7 +35,9 @@ pub mod remote;
 pub mod signer;
 
 // Re-export shared infrastructure from tsp-ltv
+#[cfg(feature = "legacy-crypto")]
 pub use tsp_ltv::der_utils;
+#[cfg(feature = "legacy-crypto")]
 pub use tsp_ltv::trust;
 
 // Policy module — always compiled (core types don't need features;
@@ -70,17 +73,19 @@ pub mod inspect;
 pub use cms::builder::{CmsProfile, CommitmentType, SignaturePolicy, SigningTimePlacement};
 /// Detached CAdES (ETSI EN 319 122-1) construction and qualifying properties.
 pub use cms::cades;
+pub use composite::CompositeAlgorithm;
 pub use core::doc_mdp::DocMdpPermissions;
 pub use core::doc_timestamp::DocTimestampOptions;
 pub use crypto::algorithm::{AlgorithmRegistry, DigestAlgorithm, SignatureAlgorithm};
+#[cfg(feature = "software-signing")]
 pub use crypto::software::SoftwareSigner;
 pub use crypto::traits::CryptoSigner;
 pub use error::PdfSignError;
 pub use signer::{PadesLevel, PdfSigner, SigningOptions, SubFilter};
 
 pub use remote::{
-    finalize_signature, prepare_signature, PreparedSignature, RemoteSignerInfo,
-    RemoteSigningOptions,
+    finalize_signature, prepare_composite_signature, prepare_signature, CompositeSignerInfo,
+    PreparedSignature, RemoteSignerInfo, RemoteSigningOptions,
 };
 
 #[cfg(feature = "tsp")]

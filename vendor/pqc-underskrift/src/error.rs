@@ -33,6 +33,7 @@ pub enum PdfSignError {
     Verify(#[from] VerifyError),
 
     #[error("Trust error: {0}")]
+    #[cfg(feature = "legacy-crypto")]
     Trust(#[from] TrustError),
 
     #[cfg(feature = "saci")]
@@ -178,6 +179,7 @@ pub enum VerifyError {
 }
 
 /// Errors from the `trust` module — trust store management (from tsp-ltv).
+#[cfg(feature = "legacy-crypto")]
 pub use tsp_ltv::error::TrustError;
 
 /// Errors from the `saci` module — SACI AuthnContext extension parsing.

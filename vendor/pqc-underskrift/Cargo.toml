@@ -17,24 +17,29 @@ exclude = [
 ]
 
 [features]
-default = ["tsp", "ltv", "visual", "verify", "blocking", "saci", "svt", "report", "inspect"]
+default = ["legacy-crypto", "software-signing", "tsp", "ltv", "visual", "verify", "blocking", "saci", "svt", "report", "inspect"]
+# Lean PDF/CMS integration: cargo build --no-default-features --features external-composite
+# Leaves signing, verification, and private-key management in the existing C++ SDK.
+external-composite = []
+legacy-crypto = ["dep:tsp-ltv"]
+software-signing = ["dep:rsa", "dep:ecdsa", "dep:p256", "dep:p384", "dep:p521", "dep:ed25519-dalek", "dep:signature", "dep:pkcs8", "dep:p12", "dep:pem-rfc7468"]
 
 # Network-dependent features
-tsp      = ["dep:reqwest", "dep:tokio"]       # RFC 3161 timestamping
+tsp      = ["legacy-crypto", "dep:reqwest", "dep:tokio"]       # RFC 3161 timestamping
 ltv      = ["tsp"]                             # LTV requires TSP + OCSP/CRL fetching
 blocking = ["dep:tokio"]                       # Sync wrappers via block_on()
 
 # Optional modules
 visual   = ["dep:image", "dep:subsetter", "dep:ttf-parser"]  # Visible signature appearances + font subsetting
-verify   = []                                  # Signature verification & validation
+verify   = ["legacy-crypto", "software-signing"]                                  # Signature verification & validation
 saci     = ["dep:uppsala"]                      # SACI AuthnContext X.509 extension parsing (RFC 7773)
-svt      = ["dep:josekit", "dep:serde", "dep:serde_json"]  # RFC 9321 Signature Validation Tokens
+svt      = ["legacy-crypto", "software-signing", "dep:josekit", "dep:serde", "dep:serde_json"]  # RFC 9321 Signature Validation Tokens
 report   = ["verify", "dep:uppsala"]                      # ETSI TS 119 102-2 validation reports
 inspect  = ["dep:serde_json"]                              # PDF object inspection and metadata extraction
 
 [dependencies]
 # Shared TSP/LTV infrastructure
-tsp-ltv = "0.2"
+tsp-ltv = { version = "0.2", optional = true }
 
 # PDF parsing and manipulation
 lopdf = "0.39"
@@ -47,13 +52,13 @@ spki = "0.7"
 const-oid = { version = "0.9", features = ["db"] }
 
 # Signing algorithms
-rsa = { version = "0.9", features = ["sha2"] }
-ecdsa = { version = "0.16", features = ["signing", "verifying", "der"] }
-p256 = { version = "0.13", features = ["ecdsa"] }
-p384 = { version = "0.13", features = ["ecdsa"] }
-p521 = { version = "0.13", features = ["ecdsa", "pkcs8"] }
-ed25519-dalek = { version = "2", features = ["pem"] }
-signature = "2"
+rsa = { version = "0.9", features = ["sha2"], optional = true }
+ecdsa = { version = "0.16", features = ["signing", "verifying", "der"], optional = true }
+p256 = { version = "0.13", features = ["ecdsa"], optional = true }
+p384 = { version = "0.13", features = ["ecdsa"], optional = true }
+p521 = { version = "0.13", features = ["ecdsa", "pkcs8"], optional = true }
+ed25519-dalek = { version = "2", features = ["pem"], optional = true }
+signature = { version = "2", optional = true }
 
 # Hashing
 sha2 = "0.10"
@@ -62,9 +67,9 @@ sha1 = "0.10"
 digest = "0.10"
 
 # Key loading
-pkcs8 = { version = "0.10", features = ["pem", "alloc"] }
-p12 = "0.6"
-pem-rfc7468 = "0.7"
+pkcs8 = { version = "0.10", features = ["pem", "alloc"], optional = true }
+p12 = { version = "0.6", optional = true }
+pem-rfc7468 = { version = "0.7", optional = true }
 
 # Error handling
 thiserror = "2"

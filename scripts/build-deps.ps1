@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("all", "cryptopp", "liboqs", "rabe", "tkn20", "covercrypt", "covercrypt-test")]
+    [ValidateSet("all", "cryptopp", "liboqs", "rabe", "tkn20", "covercrypt", "covercrypt-test", "pqc-underskrift")]
     [string]$Dependency = "all",
     [int]$Jobs = 0
 )
@@ -49,7 +49,18 @@ Write-Host "Dependency build starting: windows (total jobs=$TotalJobs)"
 
 New-Item -ItemType Directory -Force -Path $WorkDir, $IncludeDir, $LibDir | Out-Null
 
-$Required = @("cmake", "msbuild", "cargo", "go", "gcc", "lib.exe", "cl.exe", "python")
+# Git Bash -> PowerShell may not transfer the Cargo binary path correctly.
+# Use the standard rustup bin directory when present (only for the PDF crate).
+if ($Dependency -eq "pqc-underskrift") {
+    $CargoHome = if ($env:CARGO_HOME) { $env:CARGO_HOME } elseif ($env:USERPROFILE) { Join-Path $env:USERPROFILE ".cargo" } else { $null }
+    if ($CargoHome) {
+        $CargoBin = Join-Path $CargoHome "bin"
+        if (Test-Path (Join-Path $CargoBin "cargo.exe")) {
+            $env:PATH = $CargoBin + ";" + $env:PATH
+        }
+    }
+}
+$Required = if ($Dependency -eq "pqc-underskrift") { @("cargo", "rustup", "python") } else { @("cmake", "msbuild", "cargo", "go", "gcc", "lib.exe", "cl.exe", "python") }
 foreach ($Tool in $Required) {
     if (-not (Get-Command $Tool -ErrorAction SilentlyContinue)) {
         throw "Missing required tool: $Tool"
@@ -418,6 +429,53 @@ function Build-CoverCrypt([bool]$RunTests = $false) {
     Write-DependencyFingerprint "covercrypt" $Fingerprint @("rust_target=$Target", "rust_toolchain=$Toolchain", "features=curve25519,mlkem-768")
 }
 
+function Build-PqcUnderskrift {
+    # Standalone archive: not linked into C++ until the PDF C ABI is available.
+    $Target = "x86_64-pc-windows-msvc"
+    $Toolchains = @(& rustup toolchain list) | ForEach-Object { ($_ -split '\s+')[0] }
+    $Toolchain = $Toolchains | Where-Object { $_ -eq "stable-x86_64-pc-windows-msvc" } | Select-Object -First 1
+    if (-not $Toolchain) {
+        $Toolchain = $Toolchains | Where-Object { $_ -match 'x86_64-pc-windows-msvc$' } | Select-Object -First 1
+    }
+    if (-not $Toolchain) { throw "pqc-underskrift requires an installed x64 MSVC Rust toolchain" }
+    $Version = (& rustup run $Toolchain rustc -vV) -join "`n"
+    $Fingerprint = Get-NativeFingerprint "pqc-underskrift" "pqc-underskrift|$BuildVersion|$Target|$Version|$Toolchain|staticlib|external-composite|no-default-features|lto=false|panic=unwind"
+    $Work = Join-Path $WorkDir "pqc-underskrift-target"
+    $DepLibDir = Join-Path $LibDir "pqc-underskrift"
+    $OutLib = Join-Path $DepLibDir "underskrift.lib"
+    if (Test-DependencyCache "pqc-underskrift" $Fingerprint @($OutLib)) {
+        Write-Host "==> pqc-underskrift: cached"
+        return
+    }
+    Write-Host "==> pqc-underskrift ($InnerJobs jobs, external-composite, MSVC static archive only)"
+    Remove-Item $Work, $DepLibDir -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force -Path $DepLibDir | Out-Null
+
+    $OldTargetDir = $env:CARGO_TARGET_DIR
+    $OldLto = $env:CARGO_PROFILE_RELEASE_LTO
+    $OldPanic = $env:CARGO_PROFILE_RELEASE_PANIC
+    $OldWrapper = $env:RUSTC_WRAPPER
+    try {
+        $env:CARGO_TARGET_DIR = $Work
+        $env:CARGO_PROFILE_RELEASE_LTO = 'false'
+        $env:CARGO_PROFILE_RELEASE_PANIC = 'unwind'
+        $Sccache = Get-Sccache
+        if ($Sccache) { $env:RUSTC_WRAPPER = $Sccache }
+        & cargo "+$Toolchain" rustc --locked --release --jobs $InnerJobs --target $Target --manifest-path "vendor\pqc-underskrift\Cargo.toml" --lib --crate-type staticlib --no-default-features --features external-composite
+        if ($LASTEXITCODE -ne 0) { throw "pqc-underskrift static library build failed" }
+    } finally {
+        $env:CARGO_TARGET_DIR = $OldTargetDir
+        $env:CARGO_PROFILE_RELEASE_LTO = $OldLto
+        $env:CARGO_PROFILE_RELEASE_PANIC = $OldPanic
+        $env:RUSTC_WRAPPER = $OldWrapper
+    }
+    $Built = Join-Path $Work "$Target\release\underskrift.lib"
+    if (-not (Test-Path $Built)) { throw "pqc-underskrift MSVC archive missing: $Built" }
+    Copy-Item $Built $OutLib -Force
+    Write-DependencyFingerprint "pqc-underskrift" $Fingerprint @("rust_target=$Target", "features=external-composite", "link=deferred-until-ffi")
+    Remove-Item $Work -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 function Build-Tkn20 {
     $Upstream = Get-FileDigest "vendor\circl\UPSTREAM.md"
     $GoMod = Get-FileDigest "bindings\tkn20\go.mod"
@@ -515,7 +573,7 @@ function Show-Outputs {
     Write-Host " Libraries: build/deps/windows/lib/"
     Write-Host "----------------------------------------------------------------"
 
-    foreach ($Name in @("cryptopp", "liboqs", "rabe", "tkn20", "covercrypt")) {
+    foreach ($Name in @("cryptopp", "liboqs", "rabe", "tkn20", "covercrypt", "pqc-underskrift")) {
         Write-Host " [$Name]"
         Write-Host "   include: build/deps/windows/include/$Name/"
         Write-Host "   lib    : build/deps/windows/lib/$Name/"
@@ -534,7 +592,7 @@ function Write-ReadyMarker {
 }
 
 function Build-All {
-    $Priority = @("liboqs", "cryptopp", "rabe", "tkn20", "covercrypt")
+    $Priority = @("liboqs", "cryptopp", "rabe", "tkn20", "covercrypt", "pqc-underskrift")
     $Count = $Priority.Count
 
     if ($TotalJobs -lt $Count) {
@@ -577,7 +635,7 @@ function Build-All {
 
 # Workers configure only their own toolchain, before computing fingerprints.
 # Go/MinGW never receives MSVC flags. Preserve Cargo's encoded flag precedence.
-if ($Dependency -in @('rabe', 'covercrypt', 'covercrypt-test')) {
+if ($Dependency -in @('rabe', 'covercrypt', 'covercrypt-test', 'pqc-underskrift')) {
     [string[]]$RustFlags = if ($null -ne $env:CARGO_ENCODED_RUSTFLAGS) {
         @($env:CARGO_ENCODED_RUSTFLAGS -split [char]31 | Where-Object { $_ })
     } else {
@@ -598,5 +656,6 @@ switch ($Dependency) {
     "tkn20"    { Build-Tkn20 }
     "covercrypt" { Build-CoverCrypt }
     "covercrypt-test" { Build-CoverCrypt $true }
+    "pqc-underskrift" { Build-PqcUnderskrift }
     "all"      { Build-All }
 }

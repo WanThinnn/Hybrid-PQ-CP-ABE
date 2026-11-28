@@ -68,6 +68,7 @@
 use lopdf::{Document, Object};
 
 use crate::cms::builder::{CmsPreSignData, CmsProfile, PdfCmsBuilder};
+use crate::composite::CompositeAlgorithm;
 use crate::core::acroform;
 use crate::core::byte_range::ByteRange;
 use crate::core::incremental::IncrementalWriter;
@@ -192,6 +193,7 @@ pub struct PreparedSignature {
     pub(crate) content_size: usize,
     pub(crate) cms_profile: CmsProfile,
     pub(crate) signer_info: RemoteSignerInfo,
+    pub(crate) composite_algorithm: Option<CompositeAlgorithm>,
 }
 
 /// Phase 1: Prepare a PDF for remote signing.
@@ -213,6 +215,52 @@ pub fn prepare_signature(
     pdf_data: &[u8],
     signer_info: &RemoteSignerInfo,
     options: &RemoteSigningOptions,
+) -> Result<PreparedSignature, PdfSignError> {
+    prepare_signature_impl(pdf_data, signer_info, options, None)
+}
+
+/// X.509 identity and LAMPS algorithm for external Composite ML-DSA signing.
+#[derive(Debug, Clone)]
+pub struct CompositeSignerInfo {
+    pub certificate_der: Vec<u8>,
+    pub chain_der: Vec<Vec<u8>>,
+    pub algorithm: CompositeAlgorithm,
+}
+
+/// Prepares RFC 10082 CMS for a signature created by the external crypto SDK.
+/// The returned attrs_hash is PH(DER(SignedAttrs)) and MUST be passed to
+/// RFC 10073 Composite.SignPreHashed (with empty application context).
+pub fn prepare_composite_signature(
+    pdf_data: &[u8],
+    signer: &CompositeSignerInfo,
+    options: &RemoteSigningOptions,
+) -> Result<PreparedSignature, PdfSignError> {
+    signer
+        .algorithm
+        .validate_certificate(&signer.certificate_der)?;
+    if options.algorithm_registry.is_some() {
+        return Err(PdfSignError::Configuration(
+            "legacy algorithm registry cannot authorize Composite algorithms".into(),
+        ));
+    }
+    // Dummy legacy fields are never used for Composite CMS OIDs or digests:
+    // the CMS builder receives an explicit CompositeAlgorithm override.
+    let adapter = RemoteSignerInfo {
+        certificate_der: signer.certificate_der.clone(),
+        chain_der: signer.chain_der.clone(),
+        digest_algorithm: DigestAlgorithm::Sha512,
+        signature_algorithm: SignatureAlgorithm::Ed25519,
+    };
+    let mut adjusted = options.clone();
+    adjusted.content_size = adjusted.content_size.max(32 * 1024);
+    prepare_signature_impl(pdf_data, &adapter, &adjusted, Some(signer.algorithm))
+}
+
+fn prepare_signature_impl(
+    pdf_data: &[u8],
+    signer_info: &RemoteSignerInfo,
+    options: &RemoteSigningOptions,
+    composite_algorithm: Option<CompositeAlgorithm>,
 ) -> Result<PreparedSignature, PdfSignError> {
     // Step 0: Validate algorithms if registry is configured
     if let Some(registry) = &options.algorithm_registry {
@@ -332,7 +380,10 @@ pub fn prepare_signature(
     let mut hasher = digest_alg.new_hasher();
     hasher.update(range1);
     hasher.update(range2);
-    let data_hash = hasher.finalize();
+    let data_hash = match composite_algorithm {
+        Some(algorithm) => algorithm.digest_parts(&[range1, range2]),
+        None => hasher.finalize().to_vec(),
+    };
 
     // Step 10: CMS pre-sign — build signed attributes, compute attrs_hash
     let cms_profile = match options.sub_filter {
@@ -340,7 +391,10 @@ pub fn prepare_signature(
         SubFilter::Pkcs7 => CmsProfile::Traditional,
     };
     let adapter = RemoteSignerAdapter { info: signer_info };
-    let cms_builder = PdfCmsBuilder::new(&adapter).profile(cms_profile);
+    let mut cms_builder = PdfCmsBuilder::new(&adapter).profile(cms_profile);
+    if let Some(algorithm) = composite_algorithm {
+        cms_builder = cms_builder.composite_algorithm(algorithm);
+    }
     let cms_pre_sign = cms_builder.pre_sign(&data_hash)?;
 
     let attrs_hash = cms_pre_sign.attrs_hash.clone();
@@ -353,6 +407,7 @@ pub fn prepare_signature(
         content_size: options.content_size,
         cms_profile,
         signer_info: signer_info.clone(),
+        composite_algorithm,
     })
 }
 
@@ -371,11 +426,17 @@ pub fn finalize_signature(
     mut prepared: PreparedSignature,
     signature_bytes: &[u8],
 ) -> Result<Vec<u8>, PdfSignError> {
+    if let Some(algorithm) = prepared.composite_algorithm {
+        algorithm.validate_signature(signature_bytes)?;
+    }
     // Step 1: Complete the CMS SignedData with the external signature
     let adapter = RemoteSignerAdapter {
         info: &prepared.signer_info,
     };
-    let cms_builder = PdfCmsBuilder::new(&adapter).profile(prepared.cms_profile);
+    let mut cms_builder = PdfCmsBuilder::new(&adapter).profile(prepared.cms_profile);
+    if let Some(algorithm) = prepared.composite_algorithm {
+        cms_builder = cms_builder.composite_algorithm(algorithm);
+    }
     let cms_der = cms_builder.complete_cms(&prepared.cms_pre_sign, signature_bytes)?;
 
     // Step 2: Check that the CMS fits
@@ -400,7 +461,7 @@ pub fn finalize_signature(
     Ok(prepared.output)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "software-signing"))]
 mod tests {
     use super::*;
 

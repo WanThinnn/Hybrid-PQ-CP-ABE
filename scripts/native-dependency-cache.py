@@ -24,6 +24,7 @@ SOURCES = {
     'rabe': ['vendor/librabe-ffi'],
     'covercrypt': ['vendor/cover_crypt', 'bindings/covercrypt'],
     'tkn20': ['vendor/circl', 'bindings/tkn20'],
+    'pqc-underskrift': ['vendor/pqc-underskrift'],
 }
 EXCLUDED = {'.git', 'target', 'build', 'build-cmake', 'CMakeFiles',
             '__pycache__', '.cache', '.work', 'obj', 'out'}
@@ -121,6 +122,9 @@ def fingerprint(args):
              ['clang', 'clang++', 'cc', 'c++', 'ar', 'ld', 'cmake', 'make', 'go', 'cargo']
              if args.platform == 'macos' else
              ['gcc', 'g++', 'cc', 'c++', 'ar', 'ld', 'cmake', 'make', 'go', 'cargo'])
+    if args.name == 'pqc-underskrift':
+        # No Go/CMake/MSVC/other signing engines are used by this Rust-only crate.
+        tools = ['cargo', 'rustup']
     for name in ('CC', 'CXX', 'AR', 'LD'):
         if os.environ.get(name):
             tools.append(os.environ[name])
@@ -131,11 +135,11 @@ def fingerprint(args):
     go_env = subprocess.check_output(['go', 'env', '-json', 'GOOS', 'GOARCH',
         'GOAMD64', 'GOARM64', 'GOFLAGS', 'CGO_CFLAGS', 'CGO_CPPFLAGS',
         'CGO_CXXFLAGS', 'CGO_LDFLAGS', 'GOVERSION', 'GOTOOLCHAIN', 'GOEXPERIMENT',
-        'CC', 'CXX', 'AR', 'GOWORK'], text=True)
-    for compiler in (json.loads(go_env)['CC'], json.loads(go_env)['CXX']):
+        'CC', 'CXX', 'AR', 'GOWORK'], text=True) if args.name != 'pqc-underskrift' else '{}'
+    for compiler in filter(None, (json.loads(go_env).get('CC'), json.loads(go_env).get('CXX'))):
         tools.append(compiler)
     external_config = {}
-    cargo_home = Path(os.environ.get('CARGO_HOME', Path.home() / '.cargo'))
+    cargo_home = Path(os.environ['CARGO_HOME']) if os.environ.get('CARGO_HOME') else Path.home() / '.cargo'
     for path in [cargo_home / 'config', cargo_home / 'config.toml',
                  Path(os.environ.get('CMAKE_TOOLCHAIN_FILE', '__missing__'))]:
         if path.is_file():
@@ -154,6 +158,9 @@ def output_paths(base, name):
     lib = base / 'lib' / dep
     if name == 'cryptopp-dll':
         return [lib / 'cryptopp.dll', lib / 'cryptopp.lib']
+    if name == 'pqc-underskrift':
+        # Rust-only PDF crate: no C header exists until a C ABI bridge is added.
+        return [*tree(lib)]
     if name == 'cryptopp' and (base / 'lib').parent.name == 'windows':
         return [lib / 'libcryptopp.lib', *tree(base / 'include' / dep)]
     return [*tree(lib), *tree(base / 'include' / dep)]
@@ -174,6 +181,8 @@ def snapshot(base, name):
                      ['lib/covercrypt/libcovercrypt_ffi.a', f'lib/covercrypt/libcovercrypt_ffi.{extension}', 'include/covercrypt/covercrypt_ffi.h'],
         'tkn20': ['lib/tkn20/libcpabe_tkn20.dll', 'lib/tkn20/libcpabe_tkn20.lib', 'include/tkn20/cpabe_tkn20.h'] if windows else
                  ['lib/tkn20/libcpabe_tkn20.a', f'lib/tkn20/libcpabe_tkn20.{extension}', 'include/tkn20/cpabe_tkn20.h'],
+        'pqc-underskrift': ['lib/pqc-underskrift/underskrift.lib'] if windows else
+                           ['lib/pqc-underskrift/libunderskrift.a'],
     }
     for name_required in required[name]:
         if not (base / name_required).is_file():
@@ -220,7 +229,7 @@ def main():
             (base / 'lib' / '.ready').unlink(missing_ok=True)
             raise SystemExit(1)
     else:
-        names = ['cryptopp', 'liboqs', 'rabe', 'tkn20', 'covercrypt']
+        names = ['cryptopp', 'liboqs', 'rabe', 'tkn20', 'covercrypt', 'pqc-underskrift']
         if args.platform == 'windows':
             names.append('cryptopp-dll')
         try:
